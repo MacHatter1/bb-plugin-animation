@@ -10,6 +10,7 @@ The document format is compatible with Nimbalyst Animation files. Existing `.ani
 
 - **File opener** for `*.scene.json` and `*.anim.json` (registered on `json`, then delegated back to BB's preview for other JSON files)
 - **New animation** from the thread panel or command palette
+- **Settings** page under BB Settings (how to create, open, and export)
 - Timeline editor: play, scrub, retime by dragging a step boundary
 - Click a part to quote its current state into chat
 - `bb animation new|validate|export`

@@ -69,6 +69,37 @@ function NewAnimationPanel({ threadId }: PluginThreadPanelProps) {
   );
 }
 
+function SettingsSection() {
+  return (
+    <div className="space-y-3 text-sm text-muted-foreground">
+      <p>
+        There is nothing to configure. Open a <code>.scene.json</code> file to
+        play it in the Animation editor.
+      </p>
+      <ul className="list-disc space-y-1 pl-5">
+        <li>
+          Create a starter file from a thread&apos;s Actions list, the command
+          palette (<code>Animation: create .scene.json</code>), or{" "}
+          <code>bb animation new</code>.
+        </li>
+        <li>
+          Export a looping page with the editor&apos;s Export button,{" "}
+          <code>bb animation export</code>, or{" "}
+          <code>animation_export_html</code>.
+        </li>
+        <li>
+          Embed a live preview in chat with{" "}
+          <code>::scene{"{file=\"docs/flow.scene.json\"}"}</code>.
+        </li>
+        <li>
+          Pin the opener under Settings → File openers if another JSON viewer
+          wins.
+        </li>
+      </ul>
+    </div>
+  );
+}
+
 function FileOpenerSlot(props: PluginFileOpenerProps) {
   return (
     <AnimationOpener
@@ -91,6 +122,14 @@ function DirectiveSlot(props: PluginMessageDirectiveProps) {
 }
 
 export default definePluginApp((app) => {
+  app.slots.settingsSection({
+    id: "about",
+    title: "Using Animation",
+    description:
+      "Open .scene.json files in the editor. There are no connection settings.",
+    component: SettingsSection,
+  });
+
   app.slots.fileOpener({
     id: "scene-json",
     title: "Animation editor",

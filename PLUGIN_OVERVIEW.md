@@ -7,6 +7,7 @@ Play technical diagrams as a sequence of beats, not a keyframe dope sheet.
 - A starter file from the thread panel, the command palette, or `bb animation new`.
 - HTML export from the editor, `bb animation export`, or `animation_export_html`.
 - An inline chat preview: `::scene{file="docs/flow.scene.json"}`.
+- A Settings page that explains how to create, open, and export scenes.
 
 ## How it works
 
