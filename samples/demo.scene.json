@@ -1,0 +1,301 @@
+{
+  "version": 1,
+  "stage": {
+    "width": 1200,
+    "height": 620,
+    "fps": 25
+  },
+  "parts": {
+    "cache": {
+      "type": "node",
+      "label": "Cache",
+      "x": 420,
+      "y": 200,
+      "w": 260,
+      "h": 176,
+      "subtitle": "LRU, 5 MIN TTL",
+      "rows": [
+        {
+          "key": "8814",
+          "value": "absent"
+        },
+        {
+          "key": "2291",
+          "value": "hit 4.0 KB"
+        },
+        {
+          "key": "7730",
+          "value": "hit 1.1 KB"
+        }
+      ]
+    },
+    "client": {
+      "type": "node",
+      "label": "Caller",
+      "x": 64,
+      "y": 200,
+      "w": 240,
+      "h": 144,
+      "subtitle": "ORDERS API",
+      "rows": [
+        {
+          "key": "GET",
+          "value": "/orders/8814"
+        },
+        {
+          "key": "hdr",
+          "value": "no-cache"
+        }
+      ]
+    },
+    "db": {
+      "type": "node",
+      "label": "Primary",
+      "x": 900,
+      "y": 200,
+      "w": 240,
+      "h": 176,
+      "subtitle": "POSTGRES",
+      "rows": [
+        {
+          "key": "8814",
+          "value": "row 2.1 KB"
+        },
+        {
+          "key": "8815",
+          "value": "row 1.8 KB"
+        },
+        {
+          "key": "8816",
+          "value": "row 3.4 KB"
+        }
+      ]
+    },
+    "edgeMiss": {
+      "type": "edge",
+      "from": "cache",
+      "to": "db",
+      "text": "read row",
+      "packets": 3
+    },
+    "edgeRequest": {
+      "type": "edge",
+      "from": "client",
+      "to": "cache",
+      "text": "GET key",
+      "packets": 3
+    },
+    "railFetch": {
+      "type": "label",
+      "tone": "muted",
+      "x": 420,
+      "y": 520,
+      "text": "02 FETCH",
+      "align": "start",
+      "caps": true
+    },
+    "railFill": {
+      "type": "label",
+      "tone": "muted",
+      "x": 700,
+      "y": 520,
+      "text": "03 FILL",
+      "align": "start",
+      "caps": true
+    },
+    "railLookup": {
+      "type": "label",
+      "tone": "muted",
+      "x": 64,
+      "y": 520,
+      "text": "01 LOOKUP",
+      "align": "start",
+      "caps": true
+    },
+    "railServe": {
+      "type": "label",
+      "tone": "muted",
+      "x": 980,
+      "y": 520,
+      "text": "04 SERVE",
+      "align": "start",
+      "caps": true
+    },
+    "title": {
+      "type": "label",
+      "x": 64,
+      "y": 60,
+      "text": "Cache-aside read path",
+      "align": "start",
+      "caps": true
+    }
+  },
+  "steps": [
+    {
+      "id": "arrive",
+      "duration": 900,
+      "caption": "A read arrives for an order the service has served before.",
+      "set": {
+        "client": {
+          "state": "active",
+          "tone": "accent"
+        },
+        "railLookup": {
+          "state": "active",
+          "tone": "accent"
+        }
+      }
+    },
+    {
+      "id": "lookup",
+      "duration": 1000,
+      "caption": "The service asks the cache for the key.",
+      "set": {
+        "cache": {
+          "state": "active",
+          "tone": "data"
+        },
+        "edgeRequest": {
+          "state": "flowing",
+          "tone": "accent"
+        }
+      }
+    },
+    {
+      "id": "miss",
+      "duration": 900,
+      "caption": "The key is not there.",
+      "set": {
+        "cache": {
+          "state": "waiting",
+          "tone": "warning"
+        },
+        "edgeRequest": {
+          "state": "idle",
+          "tone": "neutral"
+        },
+        "railFetch": {
+          "state": "active",
+          "tone": "warning"
+        },
+        "railLookup": {
+          "state": "idle",
+          "tone": "muted"
+        }
+      }
+    },
+    {
+      "id": "fetch",
+      "duration": 1100,
+      "caption": "The read falls through to the primary.",
+      "set": {
+        "db": {
+          "state": "active",
+          "tone": "accent"
+        },
+        "edgeMiss": {
+          "state": "flowing",
+          "tone": "warning"
+        }
+      }
+    },
+    {
+      "id": "read",
+      "duration": 800,
+      "caption": "The primary finds the row.",
+      "set": {
+        "db": {
+          "state": "active",
+          "tone": "data"
+        }
+      }
+    },
+    {
+      "id": "fill",
+      "duration": 1100,
+      "caption": "The row comes back and the cache writes it.",
+      "set": {
+        "cache": {
+          "state": "active",
+          "tone": "success"
+        },
+        "edgeMiss": {
+          "state": "returning",
+          "tone": "success"
+        },
+        "railFetch": {
+          "state": "idle",
+          "tone": "muted"
+        },
+        "railFill": {
+          "state": "active",
+          "tone": "success"
+        }
+      }
+    },
+    {
+      "id": "settle",
+      "duration": 800,
+      "caption": "The primary goes quiet; the cache now holds the key.",
+      "set": {
+        "db": {
+          "state": "idle",
+          "tone": "neutral"
+        },
+        "edgeMiss": {
+          "state": "idle",
+          "tone": "neutral"
+        }
+      }
+    },
+    {
+      "id": "serve",
+      "duration": 1000,
+      "caption": "The value returns to the caller.",
+      "set": {
+        "edgeRequest": {
+          "state": "returning",
+          "tone": "success"
+        },
+        "railFill": {
+          "state": "idle",
+          "tone": "muted"
+        },
+        "railServe": {
+          "state": "active",
+          "tone": "success"
+        }
+      }
+    },
+    {
+      "id": "warm",
+      "duration": 900,
+      "caption": "The next read for the same key never leaves the cache.",
+      "set": {
+        "edgeRequest": {
+          "state": "flowing",
+          "tone": "success"
+        }
+      }
+    },
+    {
+      "id": "quiet",
+      "duration": 1200,
+      "caption": "It stays warm until the entry expires.",
+      "set": {
+        "client": {
+          "state": "idle",
+          "tone": "neutral"
+        },
+        "edgeRequest": {
+          "state": "idle",
+          "tone": "neutral"
+        },
+        "railServe": {
+          "state": "idle",
+          "tone": "muted"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,442 @@
+.scene-opener,
+.scene-editor {
+  --nim-bg: var(--background);
+  --nim-bg-secondary: var(--card);
+  --nim-bg-tertiary: var(--muted);
+  --nim-bg-hover: color-mix(in oklab, var(--foreground) 6%, transparent);
+  --nim-bg-selected: color-mix(in oklab, var(--primary) 16%, transparent);
+  --nim-bg-active: var(--card);
+  --nim-border: var(--border);
+  --nim-text: var(--foreground);
+  --nim-text-muted: var(--muted-foreground);
+  --nim-text-faint: var(--muted-foreground);
+  --nim-text-disabled: var(--muted-foreground);
+  --nim-primary: var(--primary);
+  --nim-error: var(--destructive);
+  --nim-warning: var(--primary);
+  --nim-success: var(--primary);
+  --nim-purple: var(--primary);
+  --nim-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.scene-opener {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.scene-editor {
+  display: grid;
+  grid-template-rows: 40px 1fr auto;
+  height: 100%;
+  min-height: 0;
+  flex: 1;
+  background: var(--nim-bg);
+  color: var(--nim-text);
+  font-size: 13px;
+}
+
+.scene-editor-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--nim-text-faint);
+}
+
+.scene-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  background: var(--nim-bg-secondary);
+  border-bottom: 1px solid var(--nim-border);
+}
+
+.scene-filename {
+  font-family: var(--nim-font-mono);
+  font-size: 12.5px;
+  color: var(--nim-text-muted);
+}
+
+.scene-save-state {
+  font-family: var(--nim-font-mono);
+  font-size: 11px;
+  color: var(--nim-text-faint);
+}
+
+.scene-toolbar-spacer {
+  flex: 1;
+}
+
+.scene-badge {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: help;
+}
+.scene-badge-error {
+  background: color-mix(in oklab, var(--destructive) 20%, transparent);
+  color: var(--destructive);
+}
+.scene-badge-warning {
+  background: color-mix(in oklab, var(--primary) 18%, transparent);
+  color: var(--primary);
+}
+.scene-badge-success {
+  background: color-mix(in oklab, var(--primary) 18%, transparent);
+  color: var(--primary);
+}
+
+.scene-stage-wrap {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  overflow: hidden;
+  padding: 16px 20px;
+}
+
+.scene-stage-holder {
+  position: relative;
+  display: flex;
+  width: 100%;
+  max-width: 1120px;
+  max-height: 100%;
+  min-height: 0;
+}
+
+.scene-stage-frame {
+  display: block;
+  width: 100%;
+  max-height: 100%;
+  border: 1px solid var(--nim-border);
+  background: var(--nim-bg-secondary);
+}
+
+.scene-caption {
+  max-width: 1120px;
+  margin: 0;
+  color: var(--nim-text-muted);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.scene-sep {
+  color: var(--nim-border);
+}
+
+.scene-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 8px 16px 12px;
+  background: var(--nim-bg-secondary);
+  border-top: 1px solid var(--nim-border);
+}
+
+.scene-transport {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.scene-transport-buttons {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.scene-tbtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--nim-text-muted);
+  cursor: pointer;
+}
+
+.scene-tbtn:hover {
+  background: var(--nim-bg-hover);
+}
+.scene-tbtn svg {
+  width: 13px;
+  height: 13px;
+}
+.scene-tbtn-play {
+  background: var(--nim-bg-tertiary);
+  color: var(--nim-text);
+}
+.scene-tbtn-on {
+  background: var(--nim-bg-selected);
+  color: var(--nim-primary);
+}
+
+.scene-time-readout {
+  font-family: var(--nim-font-mono);
+  font-size: 13px;
+  color: var(--nim-text);
+}
+
+.scene-time-total {
+  color: var(--nim-text-disabled);
+  font-size: 11px;
+}
+
+.scene-transport-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--nim-font-mono);
+  font-size: 11px;
+  color: var(--nim-text-faint);
+}
+
+.scene-transport-spacer {
+  flex: 1;
+}
+
+.scene-current-step {
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: var(--nim-bg-selected);
+  font-family: var(--nim-font-mono);
+  font-size: 11px;
+  color: var(--nim-primary);
+}
+
+.scene-current-step-empty {
+  background: transparent;
+  color: var(--nim-text-disabled);
+}
+
+.scene-track {
+  position: relative;
+}
+
+.scene-ruler {
+  position: relative;
+  height: 13px;
+  cursor: pointer;
+}
+
+.scene-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+.scene-tick i {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  display: block;
+  width: 1px;
+  height: 4px;
+  background: var(--nim-border);
+}
+.scene-tick span {
+  position: absolute;
+  bottom: 5px;
+  left: 3px;
+  font-family: var(--nim-font-mono);
+  font-size: 9.5px;
+  color: var(--nim-text-disabled);
+}
+
+.scene-steps-row {
+  position: relative;
+  display: flex;
+  height: 34px;
+  margin-top: 2px;
+}
+
+.scene-step {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 100%;
+  padding: 0 9px;
+  overflow: hidden;
+  border: 1px solid var(--nim-border);
+  background: var(--nim-bg-tertiary);
+  cursor: pointer;
+}
+
+.scene-step + .scene-step {
+  margin-left: -1px;
+}
+.scene-step:first-child {
+  border-radius: 4px 0 0 4px;
+}
+.scene-step:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+.scene-step-active {
+  background: var(--nim-bg-selected);
+  border-color: color-mix(in oklab, var(--primary) 55%, var(--border));
+}
+
+.scene-step-name {
+  font-family: var(--nim-font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--nim-text);
+  white-space: nowrap;
+}
+
+.scene-step-active .scene-step-name {
+  color: var(--nim-primary);
+}
+
+.scene-step-dur {
+  font-family: var(--nim-font-mono);
+  font-size: 10px;
+  color: var(--nim-text-disabled);
+  white-space: nowrap;
+}
+
+.scene-step-tones {
+  display: flex;
+  gap: 3px;
+  margin-left: auto;
+}
+
+.scene-tone-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--nim-text-faint);
+}
+.scene-tone-accent {
+  background: var(--nim-primary);
+}
+.scene-tone-data {
+  background: var(--nim-purple);
+}
+.scene-tone-success {
+  background: var(--nim-success);
+}
+.scene-tone-warning {
+  background: var(--nim-warning);
+}
+.scene-tone-error {
+  background: var(--nim-error);
+}
+.scene-tone-muted {
+  background: var(--nim-text-disabled);
+}
+
+.scene-boundary {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 11px;
+  margin-left: -5px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.scene-boundary-readonly {
+  cursor: default;
+}
+
+.scene-grip {
+  width: 3px;
+  height: 20px;
+  border-radius: 2px;
+  background: var(--nim-primary);
+  opacity: 0;
+}
+
+.scene-boundary:not(.scene-boundary-readonly):hover .scene-grip,
+.scene-boundary-active .scene-grip {
+  opacity: 1;
+}
+
+.scene-boundary-tip {
+  position: absolute;
+  top: -17px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 6px;
+  border: 1px solid var(--nim-primary);
+  border-radius: 3px;
+  background: var(--nim-bg-active);
+  font-family: var(--nim-font-mono);
+  font-size: 9.5px;
+  color: var(--nim-text);
+  white-space: nowrap;
+}
+
+.scene-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 10;
+  width: 1px;
+  background: var(--nim-warning);
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.scene-playhead::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -4px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 6px solid var(--nim-warning);
+}
+
+.scene-playhead::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -5px;
+  width: 11px;
+}
+
+.scene-embed {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+}
+
+.scene-embed-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.scene-embed .scene-stage-frame {
+  flex: 1;
+  border: 0;
+}
+
+.scene-embed-error {
+  margin: 0;
+  padding: 12px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
