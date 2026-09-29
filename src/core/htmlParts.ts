@@ -52,8 +52,9 @@ export function applyVars(
   if (!PLACEHOLDER.test(markup)) return markup;
   PLACEHOLDER.lastIndex = 0;
   return markup.replace(PLACEHOLDER, (_match, name: string) => {
-    const value = vars?.[name];
-    return value === undefined ? "" : escapeVarValue(value);
+    // Own keys only: `{{constructor}}` must not reach Object.prototype.
+    const value = vars && Object.hasOwn(vars, name) ? vars[name] : undefined;
+    return typeof value === "string" ? escapeVarValue(value) : "";
   });
 }
 

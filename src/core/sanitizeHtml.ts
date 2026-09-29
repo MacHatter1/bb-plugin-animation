@@ -81,23 +81,76 @@ const ALLOWED_ATTRS = new Set([
 const DANGEROUS_CSS = /(expression\s*\(|javascript\s*:|behaviou?r\s*:|-moz-binding|@import|<\/)/i;
 
 /**
- * `url(...)` is the one CSS function that reaches the network. Allow only
- * inline images and https, so a shared export cannot be a tracking beacon.
+ * CSS functions other than `url()` that fetch. They take a bare string, so
+ * `image-set("http://x" 1x)` reaches the network without ever writing `url(`.
+ * Shared with `stageCss.ts`, which guards theme values the same way.
+ */
+export const CSS_FETCHING_FUNCTION =
+  /(?<![\w-])(?:-webkit-)?(?:image-set|image|cross-fade|element|src)\s*\(/i;
+
+const URL_FUNCTION = /url\s*\(/gi;
+const URL_WITH_TARGET = /url\s*\(\s*(['"]?)([^'")]*)\1\s*\)/gi;
+
+/**
+ * `url(...)` targets. Allow only inline images and https, so a shared export
+ * cannot be a tracking beacon. A `url(` the pattern cannot read is refused
+ * rather than skipped.
  */
 function cssUrlsAreSafe(value: string): boolean {
-  const urls = value.matchAll(/url\s*\(\s*(['"]?)([^'")]*)\1\s*\)/gi);
-  for (const match of urls) {
+  const opened = value.match(URL_FUNCTION)?.length ?? 0;
+  let checked = 0;
+  for (const match of value.matchAll(URL_WITH_TARGET)) {
+    checked += 1;
     const target = match[2].trim().toLowerCase();
     if (!target.startsWith("data:image/") && !target.startsWith("https://")) {
       return false;
     }
   }
-  return true;
+  return checked === opened;
 }
 
+const NAMED_REFERENCES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+};
+
+/**
+ * Decode character references once, the way the browser will before the CSS
+ * parser sees the attribute. Unknown named references are left as written,
+ * and the caller refuses anything that still contains `&`.
+ */
+function decodeCharacterReferences(value: string): string {
+  return value.replace(
+    /&(#\d+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);?/g,
+    (match, body: string) => {
+      if (body.startsWith("#")) {
+        const hex = body[1] === "x" || body[1] === "X";
+        const code = Number.parseInt(body.slice(hex ? 2 : 1), hex ? 16 : 10);
+        return code > 0 && code <= 0x10ffff
+          ? String.fromCodePoint(code)
+          : "�";
+      }
+      return NAMED_REFERENCES[body] ?? match;
+    }
+  );
+}
+
+/**
+ * Check the style the browser will actually apply, not the raw attribute text:
+ * `u&#114;l(` is `url(` once entities decode, and CSS escapes (`u\72l(`) spell
+ * it too. Any reference the decoder does not know leaves an `&` behind and is
+ * refused, so the browser cannot decode something the check never saw. That is
+ * what makes it safe to write the original text back unchanged.
+ */
 function safeStyle(value: string): string | null {
-  if (DANGEROUS_CSS.test(value)) return null;
-  if (!cssUrlsAreSafe(value)) return null;
+  const css = decodeCharacterReferences(value);
+  if (css.includes("&") || css.includes("\\")) return null;
+  if (DANGEROUS_CSS.test(css)) return null;
+  if (CSS_FETCHING_FUNCTION.test(css)) return null;
+  if (!cssUrlsAreSafe(css)) return null;
   return value.replace(/--anim-/g, "--scene-");
 }
 

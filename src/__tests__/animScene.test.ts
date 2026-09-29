@@ -22,8 +22,12 @@ import { buildStandaloneDocument, buildTimeline } from "../render/standalone";
 import type { AnimDocument } from "../core/types";
 import { buildStageDocument } from "../render/stageDocument";
 import { setStageAnimationsPaused } from "../render/stageDocument";
-import { buildStageCss, FALLBACK_TOKENS } from "../render/stageCss";
-import { resolveSiblingPath } from "../core/htmlParts";
+import {
+  buildStageCss,
+  FALLBACK_TOKENS,
+  safeCssColor,
+} from "../render/stageCss";
+import { applyVars, resolveSiblingPath } from "../core/htmlParts";
 
 function docOf(json: string): AnimDocument {
   return parseDocument(json).doc;
@@ -512,3 +516,31 @@ describe("scene-subpart rules", () => {
     }
   });
 });
+
+describe("html part placeholders", () => {
+  it("never reads a placeholder name from Object.prototype", () => {
+    for (const name of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      expect(applyVars(`<p>{{${name}}}</p>`, { a: "b" })).toBe("<p></p>");
+    }
+    const doc = docOf(`{
+      "parts": { "h": { "type": "html", "x": 0, "y": 0, "w": 100, "h": 40,
+        "html": "<p>{{constructor}} {{a}}</p>", "vars": { "a": "b" } } },
+      "steps": [{ "id": "s", "duration": 100 }]
+    }`);
+    expect(() => renderScene(doc)).not.toThrow();
+    expect(renderScene(doc)).toContain("<p> b</p>");
+    expect(() => buildStandaloneDocument(doc, FALLBACK_TOKENS)).not.toThrow();
+  });
+});
+
+describe("theme colour guard", () => {
+  it("refuses theme values that fetch through image-set() or similar", () => {
+    expect(safeCssColor("image-set('http://evil/y' 1x)", "#000")).toBe("#000");
+    expect(safeCssColor("-webkit-image-set('http://evil/y' 1x)", "#000")).toBe("#000");
+    expect(safeCssColor("cross-fade('http://a', 'http://b', 50%)", "#000")).toBe("#000");
+    expect(safeCssColor("color-mix(in srgb, red 40%, blue)", "#000")).toBe(
+      "color-mix(in srgb, red 40%, blue)"
+    );
+  });
+});
+

@@ -145,4 +145,60 @@ describe("sanitizeHtml", () => {
       '<div title="a&quot;b">x</div>'
     );
   });
+
+  it("checks styles after character references decode", () => {
+    // The browser turns `&#114;` into `r` before the CSS parser runs, so this
+    // is `url(http://evil/x)` by the time anything fetches.
+    for (const style of [
+      "background:u&#114;l(http://evil/x)",
+      "background:u&#x72;l(http://evil/x)",
+      "background:&#117;rl(http://evil/x)",
+      "background:url&#40;http://evil/x)",
+    ]) {
+      expect(sanitizeHtml(`<div style="${style}">x</div>`)).toBe("<div>x</div>");
+    }
+  });
+
+  it("refuses references it cannot decode rather than guessing", () => {
+    // `&lpar;` is `(` to a browser; unknown to the decoder, so refused.
+    expect(
+      sanitizeHtml('<div style="background:url&lpar;http://evil/x)">x</div>')
+    ).toBe("<div>x</div>");
+  });
+
+  it("refuses CSS escapes, which can spell url( too", () => {
+    expect(sanitizeHtml('<div style="background:u\\72l(http://evil/x)">x</div>')).toBe(
+      "<div>x</div>"
+    );
+  });
+
+  it("refuses image-set() and the other functions that fetch without url(", () => {
+    for (const style of [
+      "background:image-set('http://evil/y' 1x)",
+      'background:-webkit-image-set("http://evil/y" 1x)',
+      "background:cross-fade('http://evil/a', 'http://evil/b', 50%)",
+      "background:image('http://evil/y')",
+    ]) {
+      expect(sanitizeHtml(`<div style="${style}">x</div>`)).toBe("<div>x</div>");
+    }
+    // A property whose name ends in "image" is not a function call.
+    expect(
+      sanitizeHtml('<div style="background-image:linear-gradient(red, blue)">x</div>')
+    ).toContain("linear-gradient");
+  });
+
+  it("refuses a url() it cannot read", () => {
+    expect(
+      sanitizeHtml('<div style="background:url(\'https://a/b)c\')">x</div>')
+    ).toBe("<div>x</div>");
+  });
+
+  it("allows https and inline-image urls, including ones written with entities", () => {
+    expect(
+      sanitizeHtml('<div style="background:url(&quot;https://a/b.png&quot;)">x</div>')
+    ).toContain("https://a/b.png");
+    expect(
+      sanitizeHtml('<div style="background:url(data:image/png;base64,AAAA)">x</div>')
+    ).toContain("data:image/png");
+  });
 });

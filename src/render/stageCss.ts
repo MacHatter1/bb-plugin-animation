@@ -13,6 +13,7 @@
  */
 
 import { PACKET_TRAVEL_S } from "./scene";
+import { CSS_FETCHING_FUNCTION } from "../core/sanitizeHtml";
 
 export interface ThemeTokens {
   bg: string;
@@ -63,7 +64,8 @@ export function safeCssColor(
     candidate === "" ||
     candidate.length > 256 ||
     /[<>{};@\\]/.test(candidate) ||
-    /url\s*\(/i.test(candidate)
+    /url\s*\(/i.test(candidate) ||
+    CSS_FETCHING_FUNCTION.test(candidate)
   ) {
     return fallback;
   }
