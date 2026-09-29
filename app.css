@@ -28,6 +28,9 @@
 
 .scene-editor {
   display: grid;
+  /* One column no wider than the panel. An implicit `auto` column grows to
+     its widest child and pushes the toolbar buttons out of narrow panels. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 40px 1fr auto;
   height: 100%;
   min-height: 0;
