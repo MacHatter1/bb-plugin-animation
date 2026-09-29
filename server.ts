@@ -4,11 +4,15 @@ import { rpcContract, type FileSource } from "./contract";
 import { parseDocument } from "./src/core/parse";
 import { htmlFileRefs } from "./src/core/htmlParts";
 import { totalDuration } from "./src/core/timeline";
-import { buildStandaloneDocument } from "./src/render/standalone";
+import {
+  buildStandaloneDocument,
+  isAnimationExport,
+} from "./src/render/standalone";
 import { FALLBACK_TOKENS } from "./src/render/stageCss";
 import {
-  isAbsoluteHostPath,
+  isInsideRoot,
   joinHostPath,
+  normalizeHostPath,
   readHostText,
   readSiblingAssets,
   resolveFileSource,
@@ -113,6 +117,97 @@ async function loadExportable(
   };
 }
 
+type ExportOutcome =
+  | {
+      ok: true;
+      outputPath: string;
+      bytes: number;
+      durationMs: number;
+      steps: number;
+      parts: number;
+      warnings: string[];
+    }
+  | { ok: false; error: string; problems?: string[] };
+
+function sameHostPath(a: string, b: string): boolean {
+  return isInsideRoot(a, b) && isInsideRoot(b, a);
+}
+
+/**
+ * The one export path. The editor, the CLI and the agent tool differ only in
+ * how they turn the user's paths into `source` and `destination`, and each
+ * resolves the output path the same way it resolved the input path.
+ *
+ * Export replaces an earlier export at the destination and nothing else: the
+ * scene itself, or any other file already there, is refused rather than
+ * overwritten.
+ */
+async function exportToHtml(
+  bb: BbPluginApi,
+  source: ResolvedFile,
+  destination: ResolvedFile,
+): Promise<ExportOutcome> {
+  if (sameHostPath(source.absolutePath, destination.absolutePath)) {
+    return {
+      ok: false,
+      error: `${destination.absolutePath} is the scene itself. Choose a different output path.`,
+    };
+  }
+  const loaded = await loadExportable(bb, source);
+  if (!loaded.ok) return loaded;
+
+  const existing = await bb.sdk.files
+    .read({
+      hostId: destination.hostId,
+      path: destination.absolutePath,
+      rootPath: destination.rootPath,
+    })
+    .catch(() => null);
+  if (
+    existing &&
+    (existing.contentEncoding === "base64" ||
+      !isAnimationExport(existing.content))
+  ) {
+    return {
+      ok: false,
+      error: `${destination.absolutePath} already exists and is not an Animation export, so it was left alone. Choose another output path, or delete that file first.`,
+    };
+  }
+
+  const html = buildStandaloneDocument(loaded.doc, FALLBACK_TOKENS, {
+    assets: new Map(Object.entries(loaded.assets)),
+    title: titleFromPath(source.absolutePath),
+  });
+  const saved = await writeHostText(
+    bb,
+    destination,
+    html,
+    existing?.sha256 ?? null,
+  );
+  if (saved.outcome === "conflict") {
+    return {
+      ok: false,
+      error: `Export conflicted at ${destination.absolutePath}. Retry.`,
+    };
+  }
+  return {
+    ok: true,
+    outputPath: destination.absolutePath,
+    bytes: html.length,
+    durationMs: totalDuration(loaded.doc),
+    steps: loaded.doc.steps.length,
+    parts: Object.keys(loaded.doc.parts).length,
+    warnings: loaded.warnings,
+  };
+}
+
+function defaultExportDestination(resolved: ResolvedFile): ResolvedFile {
+  return {
+    ...resolved,
+    absolutePath: siblingExportPath(resolved.absolutePath, ".html"),
+  };
+}
+
 export default async function plugin(bb: BbPluginApi) {
   bb.log.info("loaded");
 
@@ -171,55 +266,10 @@ export default async function plugin(bb: BbPluginApi) {
     async export_html({ path, source, outputPath }) {
       try {
         const resolved = await resolveFileSource(bb, source, path);
-        const loaded = await loadExportable(bb, resolved);
-        if (!loaded.ok) return loaded;
-        const destinationPath = outputPath?.trim()
-          ? isAbsoluteHostPath(outputPath.trim())
-            ? outputPath.trim()
-            : joinHostPath(
-                resolved.absolutePath.replace(/[\\/][^\\/]*$/, "") ||
-                  resolved.rootPath,
-                outputPath.trim(),
-              )
-          : siblingExportPath(resolved.absolutePath, ".html");
-        const destination = {
-          ...resolved,
-          absolutePath: destinationPath,
-        };
-
-        const html = buildStandaloneDocument(loaded.doc, FALLBACK_TOKENS, {
-          assets: new Map(Object.entries(loaded.assets)),
-          title: titleFromPath(resolved.absolutePath),
-        });
-        const existing = await bb.sdk.files
-          .read({
-            hostId: destination.hostId,
-            path: destination.absolutePath,
-            rootPath: destination.rootPath,
-          })
-          .then((file) => file.sha256)
-          .catch(() => null);
-        const saved = await writeHostText(
-          bb,
-          destination,
-          html,
-          existing,
-        );
-        if (saved.outcome === "conflict") {
-          return {
-            ok: false as const,
-            error: `Export conflicted at ${destination.absolutePath}. Retry.`,
-          };
-        }
-        return {
-          ok: true as const,
-          outputPath: destination.absolutePath,
-          bytes: html.length,
-          durationMs: totalDuration(loaded.doc),
-          steps: loaded.doc.steps.length,
-          parts: Object.keys(loaded.doc.parts).length,
-          warnings: loaded.warnings,
-        };
+        const destination = outputPath?.trim()
+          ? await resolveFileSource(bb, source, outputPath.trim())
+          : defaultExportDestination(resolved);
+        return await exportToHtml(bb, resolved, destination);
       } catch (error) {
         return { ok: false as const, error: describe(error) };
       }
@@ -228,10 +278,21 @@ export default async function plugin(bb: BbPluginApi) {
     async create_file({ threadId, relativePath }) {
       try {
         const workspace = await resolveThreadWorkspace(bb, threadId);
-        const path = ensureSceneJsonPath(relativePath.replace(/^[\\/]+/, ""));
+        const path = normalizeHostPath(
+          ensureSceneJsonPath(relativePath.replace(/^[\\/]+/, "")),
+        );
+        const absolutePath =
+          path === null ? null : joinHostPath(workspace.rootPath, path);
+        if (
+          path === null ||
+          absolutePath === null ||
+          !isInsideRoot(workspace.rootPath, absolutePath)
+        ) {
+          return { ok: false as const, error: "Path escapes the workspace." };
+        }
         const resolved = {
           hostId: workspace.hostId,
-          absolutePath: joinHostPath(workspace.rootPath, path),
+          absolutePath,
           rootPath: workspace.rootPath,
         };
         const saved = await writeHostText(
@@ -369,46 +430,16 @@ export default async function plugin(bb: BbPluginApi) {
             const input = args[0];
             if (!input || args.length !== 1) break;
             const resolved = await resolveInvokingHostPath(bb, input, ctx);
-            const loaded = await loadExportable(bb, resolved);
-            if (!loaded.ok) {
-              return fail(loaded.error, loaded);
+            const destination = outOpt.value
+              ? await resolveInvokingHostPath(bb, outOpt.value, ctx)
+              : defaultExportDestination(resolved);
+            const result = await exportToHtml(bb, resolved, destination);
+            if (!result.ok) {
+              return fail(result.error, result);
             }
-            const outputPath = outOpt.value
-              ? (await resolveInvokingHostPath(bb, outOpt.value, ctx))
-                  .absolutePath
-              : siblingExportPath(resolved.absolutePath, ".html");
-            const destination = {
-              ...resolved,
-              absolutePath: outputPath,
-            };
-            const html = buildStandaloneDocument(loaded.doc, FALLBACK_TOKENS, {
-              assets: new Map(Object.entries(loaded.assets)),
-              title: titleFromPath(resolved.absolutePath),
-            });
-            const existing = await bb.sdk.files
-              .read({
-                hostId: destination.hostId,
-                path: destination.absolutePath,
-                rootPath: destination.rootPath,
-              })
-              .then((file) => file.sha256)
-              .catch(() => null);
-            const saved = await writeHostText(bb, destination, html, existing);
-            if (saved.outcome === "conflict") {
-              return fail(`Export conflicted at ${outputPath}.`);
-            }
-            const payload = {
-              ok: true,
-              outputPath,
-              bytes: html.length,
-              durationMs: totalDuration(loaded.doc),
-              steps: loaded.doc.steps.length,
-              parts: Object.keys(loaded.doc.parts).length,
-              warnings: loaded.warnings,
-            };
             return reply(
-              payload,
-              `Exported ${outputPath} (${html.length} bytes)`,
+              result,
+              `Exported ${result.outputPath} (${result.bytes} bytes)`,
             );
           }
         }
@@ -455,53 +486,28 @@ export default async function plugin(bb: BbPluginApi) {
     async execute({ filePath, outputPath }, { threadId }) {
       try {
         const resolved = await toolSource(threadId, filePath);
-        const loaded = await loadExportable(bb, resolved);
-        if (!loaded.ok) {
+        const destination = outputPath
+          ? await toolSource(threadId, outputPath)
+          : defaultExportDestination(resolved);
+        const result = await exportToHtml(bb, resolved, destination);
+        if (!result.ok) {
           return {
             content: [
               {
                 type: "text",
-                text: loaded.problems
-                  ? `${loaded.error}\n${loaded.problems.join("\n")}`
-                  : loaded.error,
-              },
-            ],
-            isError: true,
-          };
-        }
-        const destinationPath = outputPath
-          ? (await toolSource(threadId, outputPath)).absolutePath
-          : siblingExportPath(resolved.absolutePath, ".html");
-        const destination = { ...resolved, absolutePath: destinationPath };
-        const html = buildStandaloneDocument(loaded.doc, FALLBACK_TOKENS, {
-          assets: new Map(Object.entries(loaded.assets)),
-          title: titleFromPath(resolved.absolutePath),
-        });
-        const existing = await bb.sdk.files
-          .read({
-            hostId: destination.hostId,
-            path: destination.absolutePath,
-            rootPath: destination.rootPath,
-          })
-          .then((file) => file.sha256)
-          .catch(() => null);
-        const saved = await writeHostText(bb, destination, html, existing);
-        if (saved.outcome === "conflict") {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Export conflicted at ${destinationPath}.`,
+                text: result.problems
+                  ? `${result.error}\n${result.problems.join("\n")}`
+                  : result.error,
               },
             ],
             isError: true,
           };
         }
         return [
-          `Exported ${destinationPath}`,
-          `bytes=${html.length} steps=${loaded.doc.steps.length} parts=${Object.keys(loaded.doc.parts).length} durationMs=${totalDuration(loaded.doc)}`,
-          loaded.warnings.length > 0
-            ? `warnings:\n${loaded.warnings.join("\n")}`
+          `Exported ${result.outputPath}`,
+          `bytes=${result.bytes} steps=${result.steps} parts=${result.parts} durationMs=${result.durationMs}`,
+          result.warnings.length > 0
+            ? `warnings:\n${result.warnings.join("\n")}`
             : "warnings: none",
         ].join("\n");
       } catch (error) {

@@ -79,6 +79,10 @@ function fileStore(initial: Record<string, string> = {}) {
             environmentId: "env_1",
             projectId: "proj_1",
           }),
+        storageLocation: async () => ({
+          hostId: "host_1",
+          storageRootPath: "/storage/thr_1",
+        }),
       },
       hosts: {
         list: async () => [{ id: "host_1" }],
@@ -207,6 +211,221 @@ describe("animation plugin server", () => {
       [],
     );
     expect(parsed.doc.steps).toHaveLength(2);
+  });
+});
+
+const WORKSPACE = {
+  kind: "workspace" as const,
+  threadId: "thr_1",
+  environmentId: null,
+  projectId: "proj_1",
+};
+
+async function loadPlugin(files: Record<string, string> = {}) {
+  const store = fileStore(files);
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "animation",
+    sdk: store.sdk,
+  });
+  await plugin(bb);
+  return { store, behavior: harness.behavior };
+}
+
+const SHARED_PARTIAL_SCENE = JSON.stringify({
+  parts: {
+    card: {
+      type: "html",
+      x: 0,
+      y: 0,
+      w: 200,
+      h: 80,
+      htmlFile: "../partials/card.html",
+    },
+  },
+  steps: [{ id: "a", duration: 500 }],
+});
+
+describe("file boundaries", () => {
+  it("refuses workspace paths that climb out with ..", async () => {
+    const { behavior } = await loadPlugin({ "/etc/passwd": "root:x:0:0" });
+    for (const path of [
+      "../etc/passwd",
+      "docs/../../etc/passwd",
+      "/work/../etc/passwd",
+    ]) {
+      const result = (await behavior.callRpc("read_file", {
+        path,
+        source: WORKSPACE,
+      })) as { ok: boolean; error?: string };
+      expect(result).toEqual({ ok: false, error: "Path escapes the workspace." });
+    }
+  });
+
+  it("refuses thread-storage paths that climb out with ..", async () => {
+    const { behavior } = await loadPlugin({ "/storage/secret": "x" });
+    const result = (await behavior.callRpc("read_file", {
+      path: "../secret",
+      source: { ...WORKSPACE, kind: "thread-storage" },
+    })) as { ok: boolean; error?: string };
+    expect(result).toEqual({ ok: false, error: "Path escapes thread storage." });
+  });
+
+  it("does not treat a differently cased sibling as inside a POSIX root", async () => {
+    const { behavior } = await loadPlugin({ "/Work/x.scene.json": "{}" });
+    const result = (await behavior.callRpc("read_file", {
+      path: "/Work/x.scene.json",
+      source: WORKSPACE,
+    })) as { ok: boolean };
+    expect(result.ok).toBe(false);
+  });
+
+  it("creates new files inside the workspace only", async () => {
+    const { store, behavior } = await loadPlugin();
+    const escaped = (await behavior.callRpc("create_file", {
+      threadId: "thr_1",
+      relativePath: "../../outside/x",
+    })) as { ok: boolean };
+    expect(escaped).toEqual({ ok: false, error: "Path escapes the workspace." });
+    expect([...store.files.keys()]).toEqual([]);
+
+    const inside = (await behavior.callRpc("create_file", {
+      threadId: "thr_1",
+      relativePath: "docs/../intro",
+    })) as { ok: boolean; path?: string };
+    expect(inside).toMatchObject({ ok: true, path: "intro.scene.json" });
+    expect(store.files.has("/work/intro.scene.json")).toBe(true);
+  });
+
+  it("resolves shared partials above the scene from the directory the CLI ran in", async () => {
+    const { store, behavior } = await loadPlugin({
+      "/proj/anims/a.scene.json": SHARED_PARTIAL_SCENE,
+      "/proj/partials/card.html": "<p>shared card</p>",
+    });
+    const exported = await behavior.runCli(
+      ["export", "anims/a.scene.json", "--json"],
+      { cwd: "/proj" },
+    );
+    expect(exported.exitCode).toBe(0);
+    expect(JSON.parse(exported.stdout).warnings).toEqual([]);
+    expect(store.files.get("/proj/anims/a.html")?.content).toContain("shared card");
+  });
+
+  it("still refuses partials above the directory the CLI ran in", async () => {
+    const { behavior } = await loadPlugin({
+      "/proj/anims/a.scene.json": SHARED_PARTIAL_SCENE,
+      "/proj/partials/card.html": "<p>shared card</p>",
+    });
+    const exported = await behavior.runCli(
+      ["export", "a.scene.json", "--json"],
+      { cwd: "/proj/anims" },
+    );
+    expect(exported.exitCode).toBe(0);
+    expect(JSON.parse(exported.stdout).warnings.join("\n")).toMatch(
+      /escapes the document root \(\/proj\/anims\)/,
+    );
+  });
+
+  it("gives a host file inside the thread's workspace the workspace as its root", async () => {
+    const { behavior } = await loadPlugin({
+      "/work/anims/a.scene.json": SHARED_PARTIAL_SCENE,
+      "/work/partials/card.html": "<p>shared card</p>",
+      "/elsewhere/anims/a.scene.json": SHARED_PARTIAL_SCENE,
+      "/elsewhere/partials/card.html": "<p>outside</p>",
+    });
+    const host = {
+      ...WORKSPACE,
+      kind: "host" as const,
+      experimental_hostId: "host_1",
+    };
+    const inside = (await behavior.callRpc("read_assets", {
+      path: "/work/anims/a.scene.json",
+      source: host,
+      refs: ["../partials/card.html"],
+    })) as { assets: Record<string, string>; errors: string[] };
+    expect(inside.assets["../partials/card.html"]).toBe("<p>shared card</p>");
+
+    const outside = (await behavior.callRpc("read_assets", {
+      path: "/elsewhere/anims/a.scene.json",
+      source: host,
+      refs: ["../partials/card.html"],
+    })) as { assets: Record<string, string>; errors: string[] };
+    expect(outside.assets).toEqual({});
+    expect(outside.errors[0]).toMatch(/escapes the document root/);
+  });
+});
+
+describe("export destinations", () => {
+  it("leaves a file it did not write alone", async () => {
+    const { store, behavior } = await loadPlugin({
+      "/work/index.scene.json": DEFAULT_ANIMATION_JSON,
+      "/work/index.html": "<html>my landing page</html>",
+    });
+    const exported = await behavior.runCli(["export", "index.scene.json"], {
+      cwd: "/work",
+      threadId: "thr_1",
+    });
+    expect(exported.exitCode).toBe(1);
+    expect(exported.stderr).toMatch(/is not an Animation export/);
+    expect(store.files.get("/work/index.html")?.content).toBe(
+      "<html>my landing page</html>",
+    );
+  });
+
+  it("refuses to write over the scene itself", async () => {
+    const { store, behavior } = await loadPlugin({
+      "/work/flow.scene.json": DEFAULT_ANIMATION_JSON,
+    });
+    const viaCli = await behavior.runCli(
+      ["export", "flow.scene.json", "--out", "flow.scene.json"],
+      { cwd: "/work", threadId: "thr_1" },
+    );
+    expect(viaCli.exitCode).toBe(1);
+    const viaTool = await behavior.callAgentTool(
+      "animation_export_html",
+      { filePath: "flow.scene.json", outputPath: "./flow.scene.json" },
+      { threadId: "thr_1" },
+    );
+    expect(typeof viaTool === "object" && viaTool.isError).toBe(true);
+    expect(store.files.get("/work/flow.scene.json")?.content).toBe(
+      DEFAULT_ANIMATION_JSON,
+    );
+  });
+
+  it("replaces its own earlier export, including one from 0.1.0", async () => {
+    const legacy =
+      '<!DOCTYPE html>\n<html lang="en">\n<body>\n' +
+      '<div data-scene-stage style="width:100%;height:100%"></div>\n' +
+      "<script>\nvar TIMELINE = [];\n</script>\n</body>\n</html>\n";
+    const { store, behavior } = await loadPlugin({
+      "/work/flow.scene.json": DEFAULT_ANIMATION_JSON,
+      "/work/flow.html": legacy,
+    });
+    const ctx = { cwd: "/work", threadId: "thr_1" };
+    expect((await behavior.runCli(["export", "flow.scene.json"], ctx)).exitCode).toBe(0);
+    expect(store.files.get("/work/flow.html")?.content).toContain(
+      '<meta name="generator" content="bb-plugin-animation">',
+    );
+    expect((await behavior.runCli(["export", "flow.scene.json"], ctx)).exitCode).toBe(0);
+  });
+
+  it("resolves an editor export path the same way as the scene path", async () => {
+    const { store, behavior } = await loadPlugin({
+      "/work/docs/flow.scene.json": DEFAULT_ANIMATION_JSON,
+    });
+    const result = (await behavior.callRpc("export_html", {
+      path: "docs/flow.scene.json",
+      source: WORKSPACE,
+      outputPath: "site/flow.html",
+    })) as { ok: boolean; outputPath?: string };
+    expect(result).toMatchObject({ ok: true, outputPath: "/work/site/flow.html" });
+    expect(store.files.has("/work/site/flow.html")).toBe(true);
+
+    const escaped = (await behavior.callRpc("export_html", {
+      path: "docs/flow.scene.json",
+      source: WORKSPACE,
+      outputPath: "../outside.html",
+    })) as { ok: boolean; error?: string };
+    expect(escaped).toEqual({ ok: false, error: "Path escapes the workspace." });
   });
 });
 

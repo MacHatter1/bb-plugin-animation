@@ -16,24 +16,79 @@ function pathSeparator(sample: string): "/" | "\\" {
   return sample.includes("\\") && !sample.includes("/") ? "\\" : "/";
 }
 
+function isWindowsPath(path: string): boolean {
+  return path.startsWith("\\\\") || /^[A-Za-z]:[\\/]/.test(path);
+}
+
+/**
+ * Resolve `.` and `..` segments without touching the filesystem.
+ *
+ * Returns null when `..` climbs above the start of the path: there is no
+ * sensible answer, and a containment check must never read one as "inside".
+ */
+export function normalizeHostPath(path: string): string | null {
+  const sep = pathSeparator(path);
+  const drive = /^([A-Za-z]:)[\\/]/.exec(path);
+  let prefix = "";
+  let rest = path;
+  if (drive) {
+    prefix = `${drive[1]}${sep}`;
+    rest = path.slice(drive[0].length);
+  } else if (path.startsWith("\\\\")) {
+    prefix = "\\\\";
+    rest = path.slice(2);
+  } else if (path.startsWith("/")) {
+    prefix = "/";
+    rest = path.slice(1);
+  }
+  const segments: string[] = [];
+  for (const segment of rest.split(/[\\/]+/)) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") {
+      if (segments.length === 0) return null;
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+  return `${prefix}${segments.join(sep)}`;
+}
+
 export function joinHostPath(root: string, relative: string): string {
   const sep = pathSeparator(root);
   const cleaned = relative.replace(/^[\\/]+/, "").replace(/[\\/]+/g, sep);
   const base = root.replace(/[\\/]+$/, "");
-  return cleaned === "" ? base : `${base}${sep}${cleaned}`;
+  const joined = cleaned === "" ? base : `${base}${sep}${cleaned}`;
+  // Left as written when `..` escapes the filesystem root, so the caller's
+  // containment check sees it and refuses.
+  return normalizeHostPath(joined) ?? joined;
 }
 
 export function isAbsoluteHostPath(path: string): boolean {
-  return path.startsWith("/") || path.startsWith("\\\\") || /^[A-Za-z]:[\\/]/.test(path);
+  return path.startsWith("/") || isWindowsPath(path);
 }
 
+/**
+ * True when `target` is `root` or sits beneath it, after resolving `..`.
+ *
+ * Windows paths compare case-insensitively. POSIX paths do not, because
+ * `/Work` and `/work` are different directories there.
+ */
 export function isInsideRoot(root: string, target: string): boolean {
-  const sep = pathSeparator(root);
-  const normalize = (value: string) =>
-    value.replace(/[\\/]+$/, "").replace(/[\\/]/g, sep).toLowerCase();
-  const nRoot = normalize(root);
-  const nTarget = normalize(target);
-  return nTarget === nRoot || nTarget.startsWith(`${nRoot}${sep}`);
+  const nRoot = normalizeHostPath(root);
+  const nTarget = normalizeHostPath(target);
+  if (nRoot === null || nTarget === null) return false;
+  const fold = (value: string) =>
+    isWindowsPath(root)
+      ? value.replace(/\\/g, "/").toLowerCase()
+      : value.replace(/\\/g, "/");
+  const base = fold(nRoot).replace(/\/+$/, "");
+  const candidate = fold(nTarget);
+  return candidate === base || candidate.startsWith(`${base}/`);
+}
+
+function parentDirectory(path: string): string {
+  return path.replace(/[\\/][^\\/]*$/, "") || path;
 }
 
 export async function resolveFileSource(
@@ -49,8 +104,19 @@ export async function resolveFileSource(
     if (!hostId) {
       throw new Error("This host file has no machine id.");
     }
-    const rootPath = path.replace(/[\\/][^\\/]*$/, "") || path;
-    return { hostId, absolutePath: path, rootPath };
+    const absolutePath = normalizeHostPath(path) ?? path;
+    // A host file inside the thread's workspace gets the workspace as its root,
+    // so `htmlFile: "../partials/x.html"` works the same as it does there.
+    const workspace = source.threadId
+      ? await resolveThreadWorkspace(bb, source.threadId).catch(() => null)
+      : null;
+    const rootPath =
+      workspace &&
+      workspace.hostId === hostId &&
+      isInsideRoot(workspace.rootPath, absolutePath)
+        ? workspace.rootPath
+        : parentDirectory(absolutePath);
+    return { hostId, absolutePath, rootPath };
   }
 
   if (source.kind === "workspace") {
@@ -69,7 +135,7 @@ export async function resolveFileSource(
       throw new Error("The environment has no workspace path.");
     }
     const absolutePath = isAbsoluteHostPath(path)
-      ? path
+      ? (normalizeHostPath(path) ?? path)
       : joinHostPath(env.path, path);
     if (!isInsideRoot(env.path, absolutePath)) {
       throw new Error("Path escapes the workspace.");
@@ -88,7 +154,7 @@ export async function resolveFileSource(
     threadId: source.threadId,
   });
   const absolutePath = isAbsoluteHostPath(path)
-    ? path
+    ? (normalizeHostPath(path) ?? path)
     : joinHostPath(location.storageRootPath, path);
   if (!isInsideRoot(location.storageRootPath, absolutePath)) {
     throw new Error("Path escapes thread storage.");
@@ -160,7 +226,7 @@ export async function readSiblingAssets(
       }
       if (!isInsideRoot(resolved.rootPath, sibling)) {
         errors.push(
-          `htmlFile ${JSON.stringify(ref)} escapes the document root.`,
+          `htmlFile ${JSON.stringify(ref)} escapes the document root (${resolved.rootPath}).`,
         );
         return;
       }
@@ -241,13 +307,21 @@ export async function resolveInvokingHostPath(
     );
   }
 
-  const resolvedRoot = rootPath && isInsideRoot(rootPath, absolutePath)
-    ? rootPath
-    : absolutePath.replace(/[\\/][^\\/]*$/, "") || absolutePath;
+  const normalized = normalizeHostPath(absolutePath) ?? absolutePath;
+  // The workspace is the natural boundary for `htmlFile` lookups. Outside one,
+  // the directory the command ran in is, so shared partials above the scene
+  // still resolve.
+  const invokedFrom = ctx.cwd?.trim();
+  const resolvedRoot =
+    rootPath && isInsideRoot(rootPath, normalized)
+      ? rootPath
+      : invokedFrom && isInsideRoot(invokedFrom, normalized)
+        ? invokedFrom
+        : parentDirectory(normalized);
 
   return {
     hostId: hostId ?? (await primaryHostId(bb)),
-    absolutePath,
+    absolutePath: normalized,
     rootPath: resolvedRoot,
   };
 }

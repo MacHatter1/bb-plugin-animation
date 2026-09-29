@@ -3,6 +3,7 @@ import {
   isAbsoluteHostPath,
   isInsideRoot,
   joinHostPath,
+  normalizeHostPath,
 } from "../hostFiles";
 import {
   ensureSceneJsonPath,
@@ -22,6 +23,28 @@ describe("host path helpers", () => {
   it("rejects paths that escape the root", () => {
     expect(isInsideRoot("/work", "/work/docs/a.scene.json")).toBe(true);
     expect(isInsideRoot("/work", "/tmp/a.scene.json")).toBe(false);
+  });
+
+  it("resolves .. before deciding whether a path is inside", () => {
+    expect(isInsideRoot("/work", "/work/../etc/passwd")).toBe(false);
+    expect(isInsideRoot("/work", joinHostPath("/work", "../etc/passwd"))).toBe(false);
+    expect(isInsideRoot("/work", "/work/docs/../a.scene.json")).toBe(true);
+    expect(isInsideRoot("/work", "/work-other/a.scene.json")).toBe(false);
+    expect(isInsideRoot("/work", "/../../work/a.scene.json")).toBe(false);
+  });
+
+  it("compares case-sensitively on POSIX and not on Windows", () => {
+    expect(isInsideRoot("/work", "/Work/a.scene.json")).toBe(false);
+    expect(isInsideRoot("C:\\Work", "c:\\work\\a.scene.json")).toBe(true);
+    expect(isInsideRoot("C:\\Work", "C:\\Work\\..\\Other\\a.json")).toBe(false);
+  });
+
+  it("normalizes paths lexically", () => {
+    expect(normalizeHostPath("/work/./docs/../a.json")).toBe("/work/a.json");
+    expect(normalizeHostPath("/work//docs/")).toBe("/work/docs");
+    expect(normalizeHostPath("/../x")).toBeNull();
+    expect(normalizeHostPath("C:\\a\\..\\b")).toBe("C:\\b");
+    expect(joinHostPath("/work", "docs/../a.scene.json")).toBe("/work/a.scene.json");
   });
 
   it("detects absolute paths", () => {

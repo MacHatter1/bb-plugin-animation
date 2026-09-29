@@ -202,6 +202,20 @@ export interface StandaloneOptions {
   assets?: HtmlAssets;
 }
 
+/** Marks a page as an Animation export, so a re-export may replace it. */
+export const EXPORT_GENERATOR = "bb-plugin-animation";
+
+/**
+ * True for a page this plugin exported. Pages from 0.1.0 carry no generator
+ * tag, so the stage wrapper and player timeline identify them instead.
+ */
+export function isAnimationExport(html: string): boolean {
+  return (
+    html.includes(`<meta name="generator" content="${EXPORT_GENERATOR}">`) ||
+    (html.includes("<div data-scene-stage") && html.includes("var TIMELINE = "))
+  );
+}
+
 export function buildStandaloneDocument(
   doc: AnimDocument,
   tokens: ThemeTokens,
@@ -219,6 +233,7 @@ export function buildStandaloneDocument(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="${EXPORT_GENERATOR}">
 <title>${escapeHtmlText(title)}</title>
 <style>${buildStageCss(
     theme.tokens,
