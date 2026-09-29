@@ -1,73 +1,262 @@
-# Animation for BB
+<div align="center">
 
-Step-based explainer diagrams for BB, stored as plain `.scene.json` files.
+<img src="docs/logo.svg" width="96" height="96" alt="Animation logo">
 
-This is a BB port of [Nimbalyst Animation](https://nimbalyst.com/extensions/animation/): a named scene plus an ordered list of steps. Each step assigns states to parts — a node becomes `active`, an edge starts `flowing` — and CSS transitions interpolate. There are no keyframes or easing curves.
+# Animation
 
-The document format is compatible with Nimbalyst Animation files. Existing `.anim.json` documents still open; new files use `.scene.json`. The parser, serializer, timeline, and stage renderer are adapted from that MIT-licensed extension.
+### Explain how a system behaves, one beat at a time.
 
-## Surfaces
+Turn a technical diagram into a short, looping explainer that you or an agent write as plain JSON.<br>
+Play it in BB, embed it in chat, or export one HTML page to share.
 
-- **File opener** for `*.scene.json` and `*.anim.json` (registered on `json`, then delegated back to BB's preview for other JSON files)
-- **New animation** from the thread panel or command palette
-- **Settings** page under BB Settings (how to create, open, and export)
-- Timeline editor: play, scrub, retime by dragging a step boundary
-- Click a part to quote its current state into chat
-- `bb animation new|validate|export`
-- Agent tools `animation_export_html` and `animation_validate`
-- Chat embed: `::scene{file="docs/flow.scene.json"}` (`::animation` still works)
+![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue)
+![bb ≥ 0.43](https://img.shields.io/badge/bb-%E2%89%A5%200.43-3b82f6)
+![Plugin SDK ≥ 0.4.88](https://img.shields.io/badge/plugin%20sdk-%E2%89%A5%200.4.88-1e3a8a)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)
 
-GIF and MP4 export are not included. Use HTML export when you need something outside BB.
+[Features](#features) · [Install](#install) · [Where to find it](#where-to-find-it) · [How it works](#how-it-works) · [CLI](#cli) · [Development](#development)
 
-## Showcase
+<br>
 
-Queue drain (fail/retry beat):
+<img src="screenshots/animation/queue-drain.png" alt="Queue drain scene: worker A acks item 1 into the sink while item 2 waits in the queue to be retried" width="900">
 
-![Queue drain](screenshots/animation/queue-drain.png)
+</div>
 
-Queue drain (both workers claiming):
+<br>
 
-![Queue drain run](screenshots/animation/queue-drain-run.png)
+## The problem
 
-Cache-aside:
+You want to show how something behaves over time: a cache miss, a retry, a
+queue draining. A static diagram shows the boxes but not the order things
+happen in. A screen recording shows the order, but no one can review it in a
+diff or ask an agent to fix step four.
 
-![Cache-aside](screenshots/animation/cache-aside.png)
+With Animation, the explainer is a small `.scene.json` file in your repo. Each
+step says what is true at that beat, and BB plays the steps in order. You or an
+agent edit it like any other file.
+
+|  | Without Animation | With Animation |
+| --- | :---: | :---: |
+| Play a diagram beat by beat in BB | ❌ | ✅ scrub, retime, loop |
+| Keep it as a reviewable file in the repo | ❌ | ✅ canonical `.scene.json` |
+| Have an agent check its own draft | ❌ | ✅ `animation_validate` |
+| Show it inline in a chat reply | ❌ | ✅ `::scene` embed |
+| Share it with someone outside BB | ❌ | ✅ one looping HTML file |
+
+## Features
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 🎬 Step editor
+
+The stage sits on top and the step strip below. Play, scrub, and drag a step
+boundary to retime it. <kbd>Space</kbd> plays, <kbd>⌘S</kbd> saves, and
+<kbd>⌘Z</kbd> / <kbd>⇧⌘Z</kbd> undo and redo.
+
+</td>
+<td width="50%" valign="top">
+
+### 📄 Plain JSON
+
+Parts plus an ordered list of steps, saved in a fixed key order so diffs stay
+small. Nimbalyst Animation `.anim.json` files open too.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### 💬 Chat embeds
+
+`::scene{file="docs/flow.scene.json"}` plays the scene inside a message. In the
+editor, click a part to quote its current state into the composer.
+
+</td>
+<td valign="top">
+
+### 🌐 HTML export
+
+Write one self-contained page that loops on its own. Click it to pause. Export
+from the editor, the CLI, or an agent tool.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### 🤖 Agent-ready
+
+A bundled skill teaches agents the format, geometry and canonical order.
+`animation_validate` reports errors and warnings before anyone opens the file.
+
+</td>
+<td valign="top">
+
+### 🎨 One palette everywhere
+
+Tones are semantic: accent, data, success, warning, error. A `stage.theme`
+palette sets the colours for the editor, embeds and export alike, with a fixed
+dark palette as the fallback.
+
+</td>
+</tr>
+</table>
+
+<div align="center">
+<table>
+<tr>
+<td align="center"><img src="screenshots/animation/queue-drain-run.png" alt="Queue drain scene with both workers claiming an item at once" width="440"><br><sub><b>Both workers claim</b></sub></td>
+<td align="center"><img src="screenshots/animation/cache-aside.png" alt="Cache-aside scene: a cache miss reads through to the primary database" width="440"><br><sub><b>Cache-aside read path</b></sub></td>
+</tr>
+</table>
+</div>
 
 ## Install
 
+```sh
+bb plugin install git:https://github.com/MacHatter1/bb-plugin-animation --yes
 ```
+
+That's it. Open any `.scene.json` file, or create one from a thread's
+**Actions → New animation**.
+
+<details>
+<summary><b>Install from a local clone</b></summary>
+
+```sh
+git clone https://github.com/MacHatter1/bb-plugin-animation
 cd bb-plugin-animation
+npm install && bb plugin build
+bb plugin install path:$PWD --yes
+```
+
+</details>
+
+**Requirements**
+
+- bb **0.43+** (Plugin SDK 0.4.88+)
+
+## Where to find it
+
+| Where | What |
+| --- | --- |
+| **File preview** | Open a `*.scene.json` or `*.anim.json` file to get the Animation editor. Other JSON files keep BB's usual preview. |
+| **Thread Actions → New animation** | Creates a starter `.scene.json` in the thread's workspace and opens it. |
+| **Command palette** | `Animation: create .scene.json` opens the same panel when a thread is open. |
+| **Composer + menu** | **Embed scene** inserts a `::scene{file="…"}` directive. |
+| **Chat messages** | `::scene{file="…"}` plays inline. An optional `height` takes 160 to 900 pixels. |
+| **Settings → Installed plugins → Animation** | A short how-to. There is nothing to configure. If another JSON viewer wins, pin this one under **Settings → File openers**. |
+
+## How it works
+
+```mermaid
+flowchart LR
+  A["You or an agent"] -->|"Write / Edit"| F[".scene.json"]
+  F --> P["parseDocument"]
+  P --> E["Animation editor"]
+  P --> V["bb animation validate<br>animation_validate"]
+  P --> X["Export HTML<br>bb animation export<br>animation_export_html"]
+  P --> C["::scene chat embed"]
+  E -->|"save, sha256 checked"| F
+  X --> H["looping .html"]
+```
+
+- **States, not keyframes.** A step assigns a `state` and a `tone` to parts,
+  and a 320 ms CSS transition interpolates. States are cumulative, so a step
+  only lists what changes.
+- **One parser everywhere.** The editor, CLI, agent tools and export all use
+  the same parser. It repairs near-misses with a warning. Errors block saving
+  and export.
+- **Canonical saves.** The editor writes a fixed key order, so saving an
+  unchanged document gives identical bytes.
+- **Same render inside and outside BB.** Export uses the editor's renderer and
+  stage CSS, with the `stage.theme` palette or a fixed dark fallback.
+- **What it will not do.** It has no GIF or MP4 export, no motion paths and no
+  text that changes between steps. Parts appear, disappear and change colour.
+  Edge packets and the `scene-spin` spinner are the only continuous motion.
+
+## Safe by default
+
+- 💾 **Saves never clobber.** The editor saves only if the file still has the
+  hash it loaded. If it changed on disk, you get a warning and nothing is
+  written. `bb animation new` refuses to overwrite an existing file.
+- 🧼 **Markup is sanitised.** `html` parts lose scripts, event handlers,
+  `<style>` and any `url()` that is not `https:` or an inline image. The stage
+  runs in a sandboxed iframe with scripts off.
+- 📁 **Partials stay near the document.** `htmlFile` must be a relative path
+  inside the document's root. Absolute paths are refused.
+- 🌐 **No network calls.** The plugin reads and writes files through BB and
+  nothing else. An exported page loads remote content only if your own markup
+  names an `https:` image.
+- 📝 **Export replaces its own output.** Exporting again overwrites the `.html`
+  at the output path. It never touches the `.scene.json`.
+
+## CLI
+
+```sh
+bb animation new docs/cache-read.scene.json         # create a starter scene
+bb animation validate docs/cache-read.scene.json    # parse it and report problems
+bb animation export docs/cache-read.scene.json      # write docs/cache-read.html
+bb animation export docs/cache-read.scene.json --out site/cache.html --json
+```
+
+<details>
+<summary><b>All commands</b></summary>
+
+| Command | Does |
+| --- | --- |
+| `new <path> [--json]` | Creates a starter scene. The path is rewritten to end in `.scene.json`. |
+| `validate <path> [--json]` | Parses the file and prints errors, warnings, and step and part counts. Exits 1 on errors. |
+| `export <path> [--out <html-path>] [--json]` | Writes standalone HTML next to the scene, or to `--out`. Refuses a file with parse errors or no steps. |
+
+Relative paths resolve from the current directory, or from the thread's
+workspace when there is no current directory.
+
+</details>
+
+**Agent tools:** `animation_validate({ filePath })` and
+`animation_export_html({ filePath, outputPath? })`. The bundled
+[skill](skills/animation/SKILL.md) teaches agents the part types, states,
+geometry and canonical key order, and when a static diagram is the better
+choice.
+
+## Development
+
+```sh
 npm install
-bb plugin install . --yes
-```
-
-Open a `.scene.json` file from the workspace, or create one with:
-
-```
-bb animation new docs/cache-read.scene.json
-```
-
-After editing sources:
-
-```
-bb plugin reload animation
-```
-
-Or run `bb plugin dev` for rebuild-on-save.
-
-## Commands
-
-```
-bb animation new <path>
-bb animation validate <path>
-bb animation export <path> [--out <html-path>]
-```
-
-Add `--json` when the output drives code.
-
-## Tests
-
-```
 npm test
-npx tsc --noEmit
+npm run typecheck
+bb plugin build
+bb plugin install path:$PWD --yes
+bb plugin dev                      # rebuild and reload on every save
 ```
+
+```
+server.ts        CLI, agent tools and the RPC the editor calls
+app.tsx          file opener, chat directive, New animation panel, settings page
+contract.ts      RPC schema shared by server and app
+src/core/        parser, serialiser, timeline and HTML sanitiser
+src/render/      scene SVG, stage CSS and the standalone export
+src/components/  editor, stage frame and step strip
+components/ui/   vendored BB UI primitives
+samples/         demo.scene.json, a cache-aside scene
+skills/          the bundled agent skill
+docs/            logo
+screenshots/     README images
+```
+
+**Tests** are Vitest unit tests for the parser, serialiser and timeline, the
+scene renderer, the HTML sanitiser and the host path helpers. A fake plugin host
+also drives the CLI and agent tools end to end: create, validate, export,
+refusing parse errors, and `.anim.json` files.
+
+`PLUGIN_OVERVIEW.md` is the store listing. Keep it in step with
+`bb.description` in `package.json`.
+
+## Licence
+
+[MIT](LICENSE). Includes a port of the MIT-licensed
+[Nimbalyst Animation](https://nimbalyst.com/extensions/animation/) extension.
+See [NOTICE](NOTICE).

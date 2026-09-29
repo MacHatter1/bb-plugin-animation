@@ -50,7 +50,7 @@ Times are **integer milliseconds**. Never frame indices, never floats.
 | --- | --- |
 | `width`, `height` | Clamped to 16..8192. The stage scales to fit the pane, so these set the aspect ratio and the coordinate system, not the pixel size. |
 | `fps` | Only affects frame snapping and the readout. Use 25 unless you have a reason. Whole-millisecond frame rates: 10, 20, 25, 50. |
-| `background` | Optional override. Omit it and the stage uses the theme surface, which is what you want -- the scene then follows the user's light/dark theme. |
+| `background` | Optional override. Omit it and the stage uses `stage.theme.bg`, or the fixed dark fallback palette when there is no theme -- usually what you want. |
 
 1200x640 is a good default. Landscape, room for a header row and a bottom rail.
 
@@ -207,7 +207,7 @@ This BB plugin does **not** ship the Nimbalyst `.tsx` compiler. Author `html` or
 
 `neutral` `accent` `data` `success` `warning` `error` `muted`
 
-They map to theme tokens, so they follow the user's theme: accent is blue, data purple, success green, warning amber, error red, neutral/muted a faint grey. **Assign them semantically and keep the meaning fixed for the whole animation** -- if amber means "under review" in step 4 it cannot mean "slow" in step 7.
+They map to stage tokens (from `stage.theme`, or the fixed dark fallback): accent is blue, data purple, success green, warning amber, error red, neutral/muted a faint grey. **Assign them semantically and keep the meaning fixed for the whole animation** -- if amber means "under review" in step 4 it cannot mean "slow" in step 7.
 
 ### states
 
