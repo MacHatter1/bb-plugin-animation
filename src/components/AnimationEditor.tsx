@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   type ComponentType,
@@ -32,6 +33,9 @@ import {
 import type { AnimDocument } from "../core/types";
 import { FALLBACK_TOKENS } from "../render/stageCss";
 import { fileNameFromPath, isAnimationDocumentPath } from "../template";
+import { DocumentSync, isOnDisk, type SaveOutcome } from "./documentSync";
+import { editorShortcut, focusKind, RetimeDrag } from "./editorInput";
+import { loadEmbed, StepTicker } from "./embed";
 import { StageFrame } from "./StageFrame";
 import { StepStrip } from "./StepStrip";
 import { usePlayback } from "./usePlayback";
@@ -63,13 +67,10 @@ export function AnimationEditor({
   const [immediate, setImmediate] = useState(true);
   const [loop, setLoopState] = useState(true);
   const [assets, setAssets] = useState<HtmlAssets>(() => new Map());
-  const [dirty, setDirty] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [exportNotice, setExportNotice] = useState<{
     ok: boolean;
     text: string;
   } | null>(null);
-  const [diskConflict, setDiskConflict] = useState(false);
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   const extrasRef = useRef<DocumentExtras>(createEmptyExtras());
@@ -78,13 +79,50 @@ export function AnimationEditor({
   docRef.current = doc;
   const assetsRef = useRef(assets);
   assetsRef.current = assets;
-  const sha256Ref = useRef<string | null>(null);
-  const lastSavedTextRef = useRef<string | null>(null);
-  const dirtyRef = useRef(false);
-  dirtyRef.current = dirty;
-  const undoRef = useRef<AnimDocument[]>([]);
-  const redoRef = useRef<AnimDocument[]>([]);
-  const dragBaseRef = useRef<AnimDocument | null>(null);
+
+  // The sync object is created once and reads the latest rpc, path and source
+  // through this ref, so its in-flight and revision state survive re-renders.
+  const ioRef = useRef({ rpc, path, source });
+  ioRef.current = { rpc, path, source };
+  const [, syncChanged] = useReducer((count: number) => count + 1, 0);
+  const [sync] = useState(
+    () =>
+      new DocumentSync<AnimDocument>(
+        {
+          read: async () => {
+            const io = ioRef.current;
+            const result = await io.rpc.call("read_file", {
+              path: io.path,
+              source: io.source,
+            });
+            return result.ok
+              ? { ok: true, content: result.content, sha256: result.sha256 }
+              : { ok: false, error: result.error };
+          },
+          write: (content, expectedSha256) => {
+            const io = ioRef.current;
+            return io.rpc.call("write_file", {
+              path: io.path,
+              source: io.source,
+              content,
+              expectedSha256,
+            });
+          },
+        },
+        syncChanged,
+        MAX_UNDO,
+      ),
+  );
+  const [drag] = useState(() => new RetimeDrag<AnimDocument>(setStepDuration));
+  const dirty = sync.dirty;
+  const saving = sync.saving;
+  const diskConflict = sync.conflict;
+
+  /** Show a document now, so handlers running before the next render see it. */
+  const showDoc = useCallback((next: AnimDocument) => {
+    docRef.current = next;
+    setDoc(next);
+  }, []);
 
   const total = totalDuration(doc);
   const playback = usePlayback({
@@ -121,64 +159,56 @@ export function AnimationEditor({
       const result = parseDocument(text);
       extrasRef.current = result.extras;
       problemsRef.current = result.problems;
-      setDoc(result.doc);
+      showDoc(result.doc);
       setProblems(result.problems);
       void refreshAssets(result.doc);
     },
-    [refreshAssets],
+    [refreshAssets, showDoc],
   );
 
+  // Initial load and the Reload button. `sync.reload` waits for any write in
+  // flight and clears undo, so nothing from before the reload can be replayed
+  // over the version just taken from disk.
   const loadFromDisk = useCallback(async () => {
-    const result = await rpc.call("read_file", { path, source });
+    const result = await sync.reload();
     if (!result.ok) {
       setLoadError(result.error);
       setLoaded(true);
       return;
     }
-    sha256Ref.current = result.sha256;
-    lastSavedTextRef.current = result.content;
     setLoadError(null);
-    setDiskConflict(false);
     ingest(result.content);
-    setDirty(false);
     setLoaded(true);
-  }, [ingest, path, rpc, source]);
+  }, [ingest, sync]);
 
   useEffect(() => {
     void loadFromDisk();
   }, [loadFromDisk]);
 
-  const save = useCallback(async () => {
-    if (problemsRef.current.some((problem) => problem.level === "error")) {
-      toast.error("Fix parse errors before saving.");
-      return;
-    }
-    const text = serializeDocument(docRef.current, extrasRef.current);
-    setSaving(true);
-    try {
-      const result = await rpc.call("write_file", {
-        path,
-        source,
-        content: text,
-        expectedSha256: sha256Ref.current,
-      });
-      if (!result.ok) {
-        toast.error(result.error);
-        return;
+  const hasErrors = () =>
+    problemsRef.current.some((problem) => problem.level === "error");
+
+  const save = useCallback(
+    async (options?: { overwrite?: boolean }): Promise<SaveOutcome> => {
+      if (hasErrors()) {
+        toast.error("Fix parse errors before saving.");
+        return "error";
       }
-      if (result.outcome === "conflict") {
-        setDiskConflict(true);
-        toast.error("The file changed on disk. Reload or save again after reviewing.");
-        return;
+      const outcome = await sync.save(
+        () => serializeDocument(docRef.current, extrasRef.current),
+        options,
+      );
+      if (outcome === "error") {
+        toast.error(sync.lastError ?? "Could not save the file.");
+      } else if (outcome === "conflict") {
+        toast.error(
+          "The file changed on disk. Reload to take that version, or Keep mine to overwrite it.",
+        );
       }
-      sha256Ref.current = result.sha256;
-      lastSavedTextRef.current = text;
-      setDirty(false);
-      setDiskConflict(false);
-    } finally {
-      setSaving(false);
-    }
-  }, [path, rpc, source]);
+      return outcome;
+    },
+    [sync],
+  );
 
   useEffect(() => {
     if (!dirty || diskConflict) return;
@@ -191,27 +221,26 @@ export function AnimationEditor({
   useEffect(() => {
     if (!loaded) return;
     const timer = window.setInterval(() => {
-      if (dirtyRef.current) return;
-      void rpc.call("read_file", { path, source }).then((result) => {
-        if (!result.ok) return;
-        if (result.content === lastSavedTextRef.current) return;
-        if (result.sha256 === sha256Ref.current) return;
-        sha256Ref.current = result.sha256;
-        lastSavedTextRef.current = result.content;
-        undoRef.current = [];
-        redoRef.current = [];
-        ingest(result.content);
+      void sync.poll(() => !drag.active).then((fresh) => {
+        if (fresh) ingest(fresh.content);
       });
     }, POLL_MS);
     return () => window.clearInterval(timer);
-  }, [ingest, loaded, path, rpc, source]);
+  }, [drag, ingest, loaded, sync]);
 
   const exportHtml = useCallback(async () => {
-    if (problemsRef.current.some((problem) => problem.level === "error")) {
+    if (hasErrors()) {
       setExportNotice({ ok: false, text: "Fix parse errors before exporting." });
       return;
     }
-    if (dirtyRef.current) await save();
+    // Export reads the file from disk, so it must match what is on screen.
+    if (!isOnDisk(await save())) {
+      setExportNotice({
+        ok: false,
+        text: "Not exported: the file could not be saved.",
+      });
+      return;
+    }
     const result = await rpc.call("export_html", { path, source });
     if (!result.ok) {
       setExportNotice({ ok: false, text: result.error });
@@ -230,20 +259,14 @@ export function AnimationEditor({
   }, [exportNotice]);
 
   const undo = useCallback(() => {
-    const previous = undoRef.current.pop();
-    if (!previous) return;
-    redoRef.current.push(docRef.current);
-    setDoc(previous);
-    setDirty(true);
-  }, []);
+    const previous = sync.undo(docRef.current);
+    if (previous) showDoc(previous);
+  }, [showDoc, sync]);
 
   const redo = useCallback(() => {
-    const next = redoRef.current.pop();
-    if (!next) return;
-    undoRef.current.push(docRef.current);
-    setDoc(next);
-    setDirty(true);
-  }, []);
+    const next = sync.redo(docRef.current);
+    if (next) showDoc(next);
+  }, [showDoc, sync]);
 
   const position = useMemo(
     () => positionAt(doc, playback.time),
@@ -270,25 +293,28 @@ export function AnimationEditor({
 
   const handleRetime = useCallback(
     (stepIndex: number, durationMs: number, commit: boolean) => {
-      if (problemsRef.current.some((problem) => problem.level === "error")) {
+      if (!commit) {
+        if (hasErrors()) return;
+        showDoc(drag.preview(docRef.current, stepIndex, durationMs));
         return;
       }
-      if (!dragBaseRef.current) dragBaseRef.current = docRef.current;
-      const base = dragBaseRef.current;
-      const next = setStepDuration(base, stepIndex, durationMs);
-      if (commit) {
-        dragBaseRef.current = null;
-        if (next === base) return;
-        undoRef.current = [...undoRef.current.slice(-(MAX_UNDO - 1)), base];
-        redoRef.current = [];
-        setDoc(next);
-        setDirty(true);
+      // The drag always ends here, even when the edit is refused, so the next
+      // drag cannot start from this one's stale base.
+      const result = drag.commit(docRef.current, stepIndex, durationMs);
+      if (hasErrors() || !result.changed) {
+        showDoc(result.base);
         return;
       }
-      setDoc(next);
+      sync.edited(result.base);
+      showDoc(result.doc);
     },
-    [],
+    [drag, showDoc, sync],
   );
+
+  const handleRetimeCancel = useCallback(() => {
+    const base = drag.cancel();
+    if (base) showDoc(base);
+  }, [drag, showDoc]);
 
   const handleStep = useCallback(
     (delta: number) => {
@@ -316,40 +342,31 @@ export function AnimationEditor({
     [composer, playback.time],
   );
 
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      const command = editorShortcut(event, focusKind(event.target));
+      if (!command) return;
+      event.preventDefault();
+      if (command === "save") void save();
+      else if (command === "undo") undo();
+      else if (command === "redo") redo();
+      else toggle();
+    },
+    [redo, save, toggle, undo],
+  );
+
+  // Keys pressed in the editor chrome. Keys pressed after clicking the stage go
+  // to the iframe's own document, which StageFrame forwards to the same handler.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const root = rootRef.current;
       const focused = document.activeElement;
       if (!root || !focused || !root.contains(focused)) return;
-      const target = event.target;
-      if (
-        target instanceof Element &&
-        target.closest(
-          'input, textarea, select, button, [contenteditable="true"]',
-        )
-      ) {
-        return;
-      }
-      const mod = event.metaKey || event.ctrlKey;
-      if (mod && event.key.toLowerCase() === "s") {
-        event.preventDefault();
-        void save();
-        return;
-      }
-      if (mod && event.key.toLowerCase() === "z") {
-        event.preventDefault();
-        if (event.shiftKey) redo();
-        else undo();
-        return;
-      }
-      if (event.code === "Space") {
-        event.preventDefault();
-        toggle();
-      }
+      handleKeyDown(event);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [redo, save, toggle, undo]);
+  }, [handleKeyDown]);
 
   const errors = problems.filter((problem) => problem.level === "error");
   const warnings = problems.filter((problem) => problem.level === "warning");
@@ -419,13 +436,22 @@ export function AnimationEditor({
             </span>
           ) : null}
           {diskConflict ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void loadFromDisk()}
-            >
-              Reload
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void loadFromDisk()}
+              >
+                Reload
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void save({ overwrite: true })}
+              >
+                Keep mine
+              </Button>
+            </>
           ) : null}
           <Button
             size="sm"
@@ -448,6 +474,7 @@ export function AnimationEditor({
               tokens={FALLBACK_TOKENS}
               assets={assets}
               onSelectPart={quoteSelection}
+              onKeyDown={handleKeyDown}
             />
           </div>
           {currentStep?.caption ? (
@@ -472,6 +499,7 @@ export function AnimationEditor({
             });
           }}
           onRetimeStep={handleRetime}
+          onRetimeCancel={handleRetimeCancel}
           readOnly={errors.length > 0}
         />
       </div>
@@ -517,26 +545,37 @@ export function AnimationDirective({
       ? heightRaw
       : 280;
 
+  // Stable across renders: the loader re-reads the file whenever this changes,
+  // and a streaming message re-renders constantly.
+  const fileSource = useMemo<FileSource>(
+    () => ({
+      kind: "workspace",
+      threadId: message.threadId || null,
+      environmentId: null,
+      projectId: message.projectId,
+    }),
+    [message.threadId, message.projectId],
+  );
+
+  // Off-screen embeds stop their clock and their packet animations.
+  const embedRef = useRef<HTMLDivElement | null>(null);
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const element = embedRef.current;
+    if (!element || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver((entries) => {
+      setVisible(entries.some((entry) => entry.isIntersecting));
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [file]);
+
   if (!file) {
     return <code>{source}</code>;
   }
 
-  const fileSource: FileSource = message.threadId
-    ? {
-        kind: "workspace",
-        threadId: message.threadId,
-        environmentId: null,
-        projectId: message.projectId,
-      }
-    : {
-        kind: "workspace",
-        threadId: null,
-        environmentId: null,
-        projectId: message.projectId,
-      };
-
   return (
-    <div className="scene-embed" style={{ height }}>
+    <div className="scene-embed" style={{ height }} ref={embedRef}>
       <div className={cn("scene-embed-bar")}>
         <span className="scene-filename">{file}</span>
         {openWorkspaceFile ? (
@@ -549,68 +588,81 @@ export function AnimationDirective({
           </Button>
         ) : null}
       </div>
-      <InlineStage path={file} source={fileSource} />
+      <InlineStage path={file} source={fileSource} visible={visible} />
     </div>
   );
 }
 
-function InlineStage({ path, source }: { path: string; source: FileSource }) {
+function InlineStage({
+  path,
+  source,
+  visible,
+}: {
+  path: string;
+  source: FileSource;
+  visible: boolean;
+}) {
   const rpc = useRpc<typeof rpcContract>();
   const [doc, setDoc] = useState<AnimDocument | null>(null);
   const [assets, setAssets] = useState<HtmlAssets>(() => new Map());
   const [error, setError] = useState<string | null>(null);
+  const [step, setStep] = useState({ index: 0, wrapped: true });
+  const stepRef = useRef(step);
+  stepRef.current = step;
 
   useEffect(() => {
     let cancelled = false;
-    void rpc.call("read_file", { path, source }).then(async (result) => {
+    void loadEmbed(path, {
+      readFile: () => rpc.call("read_file", { path, source }),
+      readAssets: (refs) => rpc.call("read_assets", { path, source, refs }),
+    }).then((result) => {
       if (cancelled) return;
       if (!result.ok) {
         setError(result.error);
         return;
       }
-      const parsed = parseDocument(result.content);
-      const refs = htmlFileRefs(parsed.doc);
-      let nextAssets: HtmlAssets = new Map();
-      if (refs.length > 0) {
-        const loaded = await rpc.call("read_assets", { path, source, refs });
-        nextAssets = new Map(Object.entries(loaded.assets));
-      }
-      if (cancelled) return;
-      setDoc(parsed.doc);
-      setAssets(nextAssets);
+      setError(null);
+      setStep({ index: 0, wrapped: true });
+      setDoc(result.doc);
+      setAssets(result.assets);
     });
     return () => {
       cancelled = true;
     };
   }, [path, rpc, source]);
 
-  const playback = usePlayback({
-    duration: doc ? totalDuration(doc) : 0,
-    loop: true,
-  });
-
+  // One timer per step rather than a frame loop: the stage only changes at a
+  // step boundary. It resumes from the current step when scrolled back in.
   useEffect(() => {
-    if (doc && !playback.playing) playback.play();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc]);
+    if (!doc || !visible) return;
+    const ticker = new StepTicker(
+      doc.steps.map((item) => item.duration),
+      (index, wrapped) => setStep({ index, wrapped }),
+      stepRef.current.index,
+    );
+    ticker.start();
+    return () => ticker.stop();
+  }, [doc, visible]);
+
+  const states = useMemo(
+    () => (doc ? resolveAtStep(doc, doc.steps.length > 0 ? step.index : -1) : null),
+    [doc, step.index],
+  );
 
   if (error) {
     return <p className="scene-embed-error">{error}</p>;
   }
-  if (!doc) {
+  if (!doc || !states) {
     return <p className="scene-embed-error">Loading animation…</p>;
   }
-
-  const position = positionAt(doc, playback.time);
-  const states = resolveAtStep(doc, position.stepIndex);
 
   return (
     <StageFrame
       doc={doc}
       sceneVersion={1}
       states={states}
-      immediate={false}
-      playing={playback.playing}
+      immediate={step.wrapped}
+      playing={visible}
       selectedPartId={null}
       tokens={FALLBACK_TOKENS}
       assets={assets}

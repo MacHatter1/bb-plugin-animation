@@ -36,6 +36,11 @@ export interface StageFrameProps {
   /** Markup for the document's `htmlFile` refs. */
   assets?: HtmlAssets;
   onSelectPart: (partId: string | null) => void;
+  /**
+   * Keys pressed after clicking the stage land in the iframe's own document and
+   * never reach the parent window, so they are forwarded here.
+   */
+  onKeyDown?: (event: KeyboardEvent) => void;
 }
 
 export function StageFrame({
@@ -48,10 +53,13 @@ export function StageFrame({
   tokens,
   assets,
   onSelectPart,
+  onKeyDown,
 }: StageFrameProps) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const onSelectRef = useRef(onSelectPart);
   onSelectRef.current = onSelectPart;
+  const onKeyDownRef = useRef(onKeyDown);
+  onKeyDownRef.current = onKeyDown;
 
   const writeScene = useCallback(() => {
     const frame = frameRef.current;
@@ -64,6 +72,9 @@ export function StageFrame({
     // Re-attached on every write because `document.open()` discards listeners.
     frameDoc.addEventListener("click", (event) => {
       onSelectRef.current(partIdFromEvent(event));
+    });
+    frameDoc.addEventListener("keydown", (event) => {
+      onKeyDownRef.current?.(event);
     });
 
     applyStates(frameDoc, states, { immediate: true });

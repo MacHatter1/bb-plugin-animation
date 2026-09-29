@@ -19,6 +19,7 @@ import {
   totalDuration,
 } from "../core/timeline";
 import type { AnimDocument } from "../core/types";
+import { draggedDuration } from "./editorInput";
 
 export interface StepStripProps {
   doc: AnimDocument;
@@ -36,6 +37,8 @@ export interface StepStripProps {
     durationMs: number,
     commit: boolean
   ) => void;
+  /** The browser took the gesture over: put the duration back. */
+  onRetimeCancel: () => void;
   currentStepIndex: number;
   readOnly: boolean;
 }
@@ -65,6 +68,7 @@ export function StepStrip({
   onJumpToStart,
   onToggleLoop,
   onRetimeStep,
+  onRetimeCancel,
   currentStepIndex,
   readOnly,
 }: StepStripProps) {
@@ -101,30 +105,33 @@ export function StepStrip({
         seekFromClientX(event.clientX);
         return;
       }
-      const scale = drag.msPerPixel;
-      if (scale === 0) return;
-      const deltaMs = (event.clientX - drag.startX) * scale;
-      onRetimeStep(drag.stepIndex, drag.startDuration + deltaMs, false);
+      if (drag.msPerPixel === 0) return;
+      onRetimeStep(drag.stepIndex, draggedDuration(drag, event.clientX), false);
     };
 
     const handleUp = (event: PointerEvent) => {
       if (drag.kind === "boundary") {
-        const scale = drag.msPerPixel;
-        const deltaMs = scale === 0 ? 0 : (event.clientX - drag.startX) * scale;
-        onRetimeStep(drag.stepIndex, drag.startDuration + deltaMs, true);
+        onRetimeStep(drag.stepIndex, draggedDuration(drag, event.clientX), true);
       }
+      setDrag(null);
+    };
+
+    // A cancel is the browser taking the gesture over (touch panning, say).
+    // Its coordinates mean nothing, so the drag is undone rather than committed.
+    const handleCancel = () => {
+      if (drag.kind === "boundary") onRetimeCancel();
       setDrag(null);
     };
 
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
-    window.addEventListener("pointercancel", handleUp);
+    window.addEventListener("pointercancel", handleCancel);
     return () => {
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
-      window.removeEventListener("pointercancel", handleUp);
+      window.removeEventListener("pointercancel", handleCancel);
     };
-  }, [drag, msPerPixel, onRetimeStep, seekFromClientX]);
+  }, [drag, msPerPixel, onRetimeCancel, onRetimeStep, seekFromClientX]);
 
   const ticks: number[] = [];
   for (let t = 0; t <= total; t += RULER_STEP_MS) ticks.push(t);
