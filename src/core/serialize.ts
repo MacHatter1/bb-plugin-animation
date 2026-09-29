@@ -14,7 +14,11 @@
  */
 
 import type { AnimDocument, Part, Step } from "./types";
-import { createEmptyExtras, type DocumentExtras } from "./parse";
+import {
+  createEmptyExtras,
+  type DocumentExtras,
+  type PreservedEntries,
+} from "./parse";
 
 const STAGE_ORDER = ["width", "height", "fps", "background", "theme"] as const;
 
@@ -79,6 +83,10 @@ const ROOT_ORDER = ["version", "stage", "parts", "steps"] as const;
  * Rebuild `source` with `order` first (skipping absent keys), then every
  * remaining key sorted. Sorting the tail is what makes the output stable when
  * the extras bag was itself built from an object with arbitrary key order.
+ *
+ * A known key held in `extra` -- a value the parser kept but could not use,
+ * such as an unknown tone -- is written in its canonical slot and wins over
+ * the modelled value, so a hand edit and a save still agree byte for byte.
  */
 function ordered(
   source: Record<string, unknown>,
@@ -87,11 +95,15 @@ function ordered(
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const key of order) {
-    if (source[key] !== undefined) out[key] = source[key];
+    const value = extra?.[key] !== undefined ? extra[key] : source[key];
+    if (value !== undefined) out[key] = value;
   }
-  const tail = { ...extra };
+  const tail: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(extra ?? {})) {
+    if (!order.includes(key)) tail[key] = value;
+  }
   for (const key of Object.keys(source)) {
-    if (!order.includes(key) && source[key] !== undefined)
+    if (!order.includes(key) && source[key] !== undefined && !(key in tail))
       tail[key] = source[key];
   }
   for (const key of Object.keys(tail).sort()) {
@@ -100,23 +112,52 @@ function ordered(
   return out;
 }
 
+/**
+ * Put back map entries the parser could not use, in the order the author
+ * wrote them, around the entries it did use.
+ */
+function withPreserved(
+  used: Record<string, unknown> | undefined,
+  kept: PreservedEntries | undefined
+): Record<string, unknown> | undefined {
+  if (!kept) return used;
+  const out: Record<string, unknown> = {};
+  for (const key of kept.order) {
+    if (used?.[key] !== undefined) out[key] = used[key];
+    else if (Object.hasOwn(kept.values, key)) out[key] = kept.values[key];
+  }
+  for (const [key, value] of Object.entries(used ?? {})) {
+    if (!Object.hasOwn(out, key)) out[key] = value;
+  }
+  return out;
+}
+
 function serializePart(
   part: Part,
   extra?: Record<string, unknown>,
   rowExtras?: Array<Record<string, unknown>>,
-  subPartExtras?: Record<string, Record<string, unknown>>
+  subPartExtras?: Record<string, Record<string, unknown>>,
+  kept: { vars?: PreservedEntries; subParts?: PreservedEntries } = {}
 ): Record<string, unknown> {
-  if (part.type === "html" && part.subParts) {
-    const subParts: Record<string, unknown> = {};
-    for (const [subId, spec] of Object.entries(part.subParts)) {
-      subParts[subId] = ordered(
-        spec as unknown as Record<string, unknown>,
-        SUB_PART_ORDER,
-        subPartExtras?.[subId]
-      );
-    }
+  if (part.type === "html") {
+    const subParts = part.subParts
+      ? Object.fromEntries(
+          Object.entries(part.subParts).map(([subId, spec]) => [
+            subId,
+            ordered(
+              spec as unknown as Record<string, unknown>,
+              SUB_PART_ORDER,
+              subPartExtras?.[subId]
+            ),
+          ])
+        )
+      : undefined;
     return ordered(
-      { ...part, subParts } as unknown as Record<string, unknown>,
+      {
+        ...part,
+        subParts: withPreserved(subParts, kept.subParts),
+        vars: withPreserved(part.vars, kept.vars),
+      } as unknown as Record<string, unknown>,
       PART_ORDER.html,
       extra
     );
@@ -193,7 +234,8 @@ export function toCanonicalObject(
       doc.parts[id],
       extras.parts[id],
       extras.rows[id],
-      extras.subParts[id]
+      extras.subParts[id],
+      { vars: extras.vars?.[id], subParts: extras.subPartEntries?.[id] }
     );
   }
 
@@ -205,7 +247,10 @@ export function toCanonicalObject(
   const root: Record<string, unknown> = {
     version: 1,
     stage: ordered(
-      doc.stage as unknown as Record<string, unknown>,
+      {
+        ...doc.stage,
+        theme: withPreserved(doc.stage.theme, extras.theme),
+      } as unknown as Record<string, unknown>,
       STAGE_ORDER,
       extras.stage
     ),

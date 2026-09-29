@@ -36,6 +36,15 @@ export interface Problem {
   message: string;
 }
 
+/**
+ * Map entries the parser could not use, plus the map's original key order, so
+ * the serializer can put them back exactly where the author wrote them.
+ */
+export interface PreservedEntries {
+  order: string[];
+  values: Record<string, unknown>;
+}
+
 export interface DocumentExtras {
   root: Record<string, unknown>;
   stage: Record<string, unknown>;
@@ -45,6 +54,12 @@ export interface DocumentExtras {
   assignments: Record<string, Record<string, Record<string, unknown>>>;
   /** Unknown keys inside a `subParts` entry, keyed part id then sub-part id. */
   subParts: Record<string, Record<string, Record<string, unknown>>>;
+  /** `stage.theme` values that are not strings. */
+  theme?: PreservedEntries;
+  /** `vars` values that are not strings, keyed by part id. */
+  vars: Record<string, PreservedEntries>;
+  /** `subParts` entries that are not objects, keyed by part id. */
+  subPartEntries: Record<string, PreservedEntries>;
 }
 
 export interface ParseResult {
@@ -67,6 +82,8 @@ export function createEmptyExtras(): DocumentExtras {
     steps: {},
     assignments: {},
     subParts: {},
+    vars: {},
+    subPartEntries: {},
   };
 }
 
@@ -124,43 +141,60 @@ function coerceTone(
   return undefined;
 }
 
+/** Remember the entries a map lost, if it lost any. */
+function preserved(
+  source: Record<string, unknown>,
+  values: Record<string, unknown>
+): PreservedEntries | undefined {
+  return Object.keys(values).length > 0
+    ? { order: Object.keys(source), values }
+    : undefined;
+}
+
 /**
  * `vars` for an html part: a flat string map, and nothing else.
  *
  * Non-string scalars are coerced rather than rejected -- an agent writing
- * `"count": 4` means the text "4" -- but a nested object or array is dropped
- * with a warning, because there is no substitution semantics that would make it
- * meaningful and silently stringifying it would print "[object Object]" on the
- * stage.
+ * `"count": 4` means the text "4" -- but a nested object or array is not used,
+ * because there is no substitution semantics that would make it meaningful and
+ * silently stringifying it would print "[object Object]" on the stage. It is
+ * still kept for the serializer, so a save does not delete it.
  */
 function coerceVars(
+  partId: string,
   value: unknown,
   path: string,
-  problems: Problem[]
+  problems: Problem[],
+  extras: DocumentExtras
 ): Record<string, string> | undefined {
   if (value === undefined) return undefined;
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+  if (!isPlainObject(value)) {
     problems.push({
       level: "warning",
       path: `${path}.vars`,
-      message: "Vars must be an object of strings; ignored.",
+      message: "Vars must be an object of strings; kept but not used.",
     });
+    extras.parts[partId].vars = value;
     return undefined;
   }
   const out: Record<string, string> = {};
-  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+  const unused: Record<string, unknown> = {};
+  for (const [key, raw] of Object.entries(value)) {
     const text =
       typeof raw === "boolean" ? String(raw) : coerceString(raw);
     if (text === undefined) {
       problems.push({
         level: "warning",
         path: `${path}.vars.${key}`,
-        message: "Var is not a string; ignored.",
+        message: "Var is not a string; kept but not used.",
       });
+      unused[key] = raw;
       continue;
     }
     out[key] = text;
   }
+  const kept = preserved(value, unused);
+  if (kept) extras.vars[partId] = kept;
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -184,19 +218,22 @@ function coerceSubParts(
     problems.push({
       level: "warning",
       path: `${path}.subParts`,
-      message: "Sub-parts must be an object; ignored.",
+      message: "Sub-parts must be an object; kept but not used.",
     });
+    extras.parts[partId].subParts = value;
     return undefined;
   }
   const out: Record<string, SubPartSpec> = {};
   const leftovers: Record<string, Record<string, unknown>> = {};
+  const unused: Record<string, unknown> = {};
   for (const [subId, raw] of Object.entries(value)) {
     if (!isPlainObject(raw)) {
       problems.push({
         level: "warning",
         path: `${path}.subParts.${subId}`,
-        message: "Not an object; sub-part ignored.",
+        message: "Not an object; sub-part kept but not used.",
       });
+      unused[subId] = raw;
       continue;
     }
     const label = coerceString(raw.label);
@@ -212,6 +249,8 @@ function coerceSubParts(
     };
   }
   if (Object.keys(leftovers).length > 0) extras.subParts[partId] = leftovers;
+  const kept = preserved(value, unused);
+  if (kept) extras.subPartEntries[partId] = kept;
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -238,30 +277,35 @@ function leftoverKeys(
  */
 function coerceTheme(
   value: unknown,
-  problems: Problem[]
+  problems: Problem[],
+  extras: DocumentExtras
 ): Record<string, string> | undefined {
   if (value === undefined) return undefined;
   if (!isPlainObject(value)) {
     problems.push({
       level: "warning",
       path: "stage.theme",
-      message: "Theme must be an object of colour strings; ignored.",
+      message: "Theme must be an object of colour strings; kept but not used.",
     });
+    extras.stage.theme = value;
     return undefined;
   }
   const out: Record<string, string> = {};
+  const unused: Record<string, unknown> = {};
   for (const [key, raw] of Object.entries(value)) {
     const text = coerceString(raw);
     if (text === undefined) {
       problems.push({
         level: "warning",
         path: `stage.theme.${key}`,
-        message: "Theme value is not a string; ignored.",
+        message: "Theme value is not a string; kept but not used.",
       });
+      unused[key] = raw;
       continue;
     }
     out[key] = text;
   }
+  extras.theme = preserved(value, unused);
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -275,10 +319,12 @@ function parseStage(
   const fallback = createEmptyDocument().stage;
   if (!isPlainObject(raw)) {
     if (raw !== undefined) {
+      // An error, not a warning: the serializer always writes a stage object,
+      // so saving would replace whatever was here with the defaults.
       problems.push({
-        level: "warning",
+        level: "error",
         path: "stage",
-        message: "Not an object; using defaults.",
+        message: "Not an object; previewed with defaults but saving is blocked.",
       });
     }
     return fallback;
@@ -302,7 +348,7 @@ function parseStage(
   };
   const background = coerceString(raw.background);
   if (background) stage.background = background;
-  const theme = coerceTheme(raw.theme, problems);
+  const theme = coerceTheme(raw.theme, problems, extras);
   if (theme) stage.theme = theme;
 
   if (width !== null && stage.width !== width) {
@@ -513,7 +559,7 @@ function parsePart(
 
       const markup = coerceString(raw.html);
       const htmlFile = coerceString(raw.htmlFile);
-      const vars = coerceVars(raw.vars, path, problems);
+      const vars = coerceVars(id, raw.vars, path, problems, extras);
       const component = coerceString(raw.component);
       const subParts = coerceSubParts(id, raw.subParts, path, problems, extras);
 

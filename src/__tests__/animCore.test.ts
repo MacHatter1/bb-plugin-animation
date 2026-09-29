@@ -600,3 +600,129 @@ describe("component parts", () => {
     expect(part?.description).toContain("Steps that assign it: landed");
   });
 });
+
+describe("values the parser cannot use", () => {
+  // Hand-written in canonical form, so a round trip must give the same bytes.
+  const CANONICAL = `{
+  "version": 1,
+  "stage": {
+    "width": 400,
+    "height": 200,
+    "fps": 25,
+    "theme": {
+      "accent": "#3b82f6",
+      "dark": {
+        "accent": "#1e3a8a"
+      },
+      "bg": "#111111"
+    }
+  },
+  "parts": {
+    "card": {
+      "type": "html",
+      "x": 0,
+      "y": 0,
+      "w": 100,
+      "h": 50,
+      "subParts": {
+        "a": {},
+        "b": "not an object",
+        "c": {
+          "tone": "accent"
+        }
+      },
+      "html": "<p>{{title}}</p>",
+      "vars": {
+        "title": "Hello",
+        "list": [
+          "x"
+        ],
+        "tail": "end"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "s",
+      "duration": 400
+    }
+  ]
+}
+`;
+
+  it("keeps them on save, in the order the author wrote them", () => {
+    const { doc, extras, problems } = parseDocument(CANONICAL);
+    expect(problems.some((problem) => problem.level === "error")).toBe(false);
+    expect(problems.map((problem) => problem.path)).toEqual([
+      "stage.theme.dark",
+      "parts.card.vars.list",
+      "parts.card.subParts.b",
+    ]);
+    // The renderer only ever sees the usable values.
+    expect(doc.stage.theme).toEqual({ accent: "#3b82f6", bg: "#111111" });
+    expect(serializeDocument(doc, extras)).toBe(CANONICAL);
+  });
+
+  it("keeps them through an edit", () => {
+    const { doc, extras } = parseDocument(CANONICAL);
+    const edited = setStepDuration(doc, 0, 800);
+    const out = JSON.parse(serializeDocument(edited, extras));
+    expect(out.stage.theme.dark).toEqual({ accent: "#1e3a8a" });
+    expect(out.parts.card.vars.list).toEqual(["x"]);
+    expect(out.parts.card.subParts.b).toBe("not an object");
+    expect(out.steps[0].duration).toBe(800);
+  });
+
+  it("keeps a theme, vars or subParts that is not an object at all", () => {
+    const text = JSON.stringify({
+      stage: { width: 400, height: 200, fps: 25, theme: "dark" },
+      parts: {
+        card: {
+          type: "html", x: 0, y: 0, w: 100, h: 50,
+          html: "<p></p>", vars: "oops", subParts: ["a"],
+        },
+      },
+      steps: [],
+    });
+    const { doc, extras, problems } = parseDocument(text);
+    expect(problems.some((problem) => problem.level === "error")).toBe(false);
+    const out = JSON.parse(serializeDocument(doc, extras));
+    expect(out.stage.theme).toBe("dark");
+    expect(Object.keys(out.stage)).toEqual(["width", "height", "fps", "theme"]);
+    expect(out.parts.card.vars).toBe("oops");
+    expect(out.parts.card.subParts).toEqual(["a"]);
+  });
+
+  it("blocks saving when stage is not an object, since saving would replace it", () => {
+    const { problems } = parseDocument(`{"stage":"wide","parts":{},"steps":[]}`);
+    expect(problems).toContainEqual(
+      expect.objectContaining({ level: "error", path: "stage" })
+    );
+  });
+
+  it("writes a kept but unusable tone back in its canonical slot", () => {
+    const text = `{
+  "version": 1,
+  "stage": {
+    "width": 400,
+    "height": 200,
+    "fps": 25
+  },
+  "parts": {
+    "a": {
+      "type": "node",
+      "tone": "purple",
+      "x": 0,
+      "y": 0,
+      "w": 10,
+      "h": 10
+    }
+  },
+  "steps": []
+}
+`;
+    const { doc, extras } = parseDocument(text);
+    expect(serializeDocument(doc, extras)).toBe(text);
+  });
+});
+
