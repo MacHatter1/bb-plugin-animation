@@ -6,6 +6,8 @@ All notable changes to Animation are documented here. The format follows
 
 ## Unreleased
 
+## 0.1.1 - 2026-09-29
+
 ### Added
 
 - README logo, changelog and `.gitattributes`, following the house layout for

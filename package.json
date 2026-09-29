@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-animation",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Play technical diagrams as a sequence of beats, then export a looping HTML page.",
   "license": "MIT",
   "repository": {
