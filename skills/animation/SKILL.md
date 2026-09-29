@@ -110,7 +110,7 @@ The markup comes from one of two places:
   "vars": { "title": "acme-api", "branch": "main" } }
 ```
 
-- **`htmlFile`** is a path to a `.html` file next to the document. Relative only; `..` is allowed, absolute is refused.
+- **`htmlFile`** is a path to a `.html` file next to the document. Relative only, and absolute is refused. `..` is allowed as long as the file stays inside the workspace (outside a workspace: the directory the CLI ran in, or the scene's own folder).
 - **`html`** is markup inline. Right for a few lines, wrong for a widget.
 
 `vars` fills `{{name}}` placeholders in whichever source won. Values are **HTML-escaped**, so a var is text and cannot change the structure of the partial it lands in. An unfilled placeholder resolves to empty, never to its own name. That is the entire template language -- no conditionals, no loops, no expressions.
@@ -327,7 +327,7 @@ animation_export_html { filePath: "docs/cache.scene.json" }
 -> docs/cache.html
 ```
 
-Pass `outputPath` to put it somewhere else. It refuses to export a document with parse errors, and returns any warnings alongside the result. Clicking the exported page pauses it.
+Pass `outputPath` to put it somewhere else; a relative path resolves the same way as `filePath`. It refuses to export a document with parse errors, and returns any warnings alongside the result. It only overwrites an earlier Animation export: if another file already sits at the output path, including the scene itself, it stops with an error, so pick a different `outputPath` rather than deleting the user's file. Clicking the exported page pauses it.
 
 **There is no GIF or MP4 export in this BB plugin.** If the destination cannot run HTML, say so and offer the standalone HTML anyway, or a screenshot of one step. Do not pretend a GIF tool exists.
 

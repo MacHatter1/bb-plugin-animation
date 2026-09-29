@@ -180,18 +180,24 @@ flowchart LR
 ## Safe by default
 
 - 💾 **Saves never clobber.** The editor saves only if the file still has the
-  hash it loaded. If it changed on disk, you get a warning and nothing is
-  written. `bb animation new` refuses to overwrite an existing file.
+  hash it loaded, and only one save runs at a time. If the file changed on
+  disk, nothing is written until you choose: **Reload** takes the version on
+  disk, **Keep mine** overwrites it. `bb animation new` refuses to overwrite an
+  existing file.
 - 🧼 **Markup is sanitised.** `html` parts lose scripts, event handlers,
   `<style>` and any `url()` that is not `https:` or an inline image. The stage
   runs in a sandboxed iframe with scripts off.
-- 📁 **Partials stay near the document.** `htmlFile` must be a relative path
-  inside the document's root. Absolute paths are refused.
+- 📁 **Paths stay in the workspace.** The editor, chat embeds and **New
+  animation** refuse paths that climb out of the workspace with `..`. An
+  `htmlFile` must be relative and stay inside the workspace. Outside a
+  workspace, the limit is the directory the CLI ran in, or the scene's own
+  folder.
 - 🌐 **No network calls.** The plugin reads and writes files through BB and
   nothing else. An exported page loads remote content only if your own markup
   names an `https:` image.
-- 📝 **Export replaces its own output.** Exporting again overwrites the `.html`
-  at the output path. It never touches the `.scene.json`.
+- 📝 **Export only replaces its own output.** Exporting again overwrites an
+  earlier Animation export. Any other file at the output path, including the
+  scene itself, is left alone and the export stops with an error.
 
 ## CLI
 
@@ -209,7 +215,7 @@ bb animation export docs/cache-read.scene.json --out site/cache.html --json
 | --- | --- |
 | `new <path> [--json]` | Creates a starter scene. The path is rewritten to end in `.scene.json`. |
 | `validate <path> [--json]` | Parses the file and prints errors, warnings, and step and part counts. Exits 1 on errors. |
-| `export <path> [--out <html-path>] [--json]` | Writes standalone HTML next to the scene, or to `--out`. Refuses a file with parse errors or no steps. |
+| `export <path> [--out <html-path>] [--json]` | Writes standalone HTML next to the scene, or to `--out`. Refuses a file with parse errors or no steps, and will not overwrite a file that is not an earlier export. |
 
 Relative paths resolve from the current directory, or from the thread's
 workspace when there is no current directory.
