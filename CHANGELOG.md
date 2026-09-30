@@ -6,6 +6,8 @@ All notable changes to Animation are documented here. The format follows
 
 ## Unreleased
 
+## 0.1.2 - 2026-09-30
+
 ### Fixed
 
 - Agents wrote chat embeds as `::scene{file="…",height=640}`, which BB shows
