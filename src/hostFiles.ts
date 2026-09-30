@@ -87,6 +87,19 @@ export function isInsideRoot(root: string, target: string): boolean {
   return candidate === base || candidate.startsWith(`${base}/`);
 }
 
+/**
+ * `target` relative to `root`, with `/` separators, or null when it is the
+ * root itself or sits outside it.
+ */
+export function relativeToRoot(root: string, target: string): string | null {
+  if (!isInsideRoot(root, target)) return null;
+  const base = (normalizeHostPath(root) ?? root).replace(/[\\/]+$/, "");
+  const rest = (normalizeHostPath(target) ?? target)
+    .slice(base.length)
+    .replace(/^[\\/]+/, "");
+  return rest === "" ? null : rest.replace(/\\/g, "/");
+}
+
 function parentDirectory(path: string): string {
   return path.replace(/[\\/][^\\/]*$/, "") || path;
 }

@@ -146,7 +146,7 @@ bb plugin install path:$PWD --yes
 | **Thread Actions → New animation** | Creates a starter `.scene.json` in the thread's workspace and opens it. |
 | **Command palette** | `Animation: create .scene.json` opens the same panel when a thread is open. |
 | **Composer + menu** | **Embed scene** inserts a `::scene{file="…"}` directive. |
-| **Chat messages** | `::scene{file="…"}` plays inline. An optional `height` takes 160 to 900 pixels. |
+| **Chat messages** | `::scene{file="…"}` plays inline. An optional height of 160 to 900 pixels goes after a space: `::scene{file="…" height=480}`. A comma between the two stops BB reading the line as a directive. |
 | **Settings → Installed plugins → Animation** | A short how-to. There is nothing to configure. If another JSON viewer wins, pin this one under **Settings → File openers**. |
 
 ## How it works

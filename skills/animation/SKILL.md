@@ -12,7 +12,7 @@ BB surfaces:
 - Open `*.scene.json` in the file preview (Animation editor).
 - `bb animation new|validate|export` from a thread workspace.
 - Native tools `animation_export_html` and `animation_validate`.
-- Inline chat preview: `::scene{file="docs/flow.scene.json"}`.
+- Inline chat preview: `::scene{file="docs/flow.scene.json"}`. Attributes are separated by a space, never a comma.
 - Click a part on the stage to quote its current state into chat.
 
 ## When to use this
@@ -343,7 +343,15 @@ To embed a live preview in an assistant message, emit this directive on its own 
 ::scene{file="docs/cache.scene.json"}
 ```
 
-`file` is workspace-relative. Optional `height` is pixels from 160 to 900. After `Write`/`Edit` creates the file, emit the directive so the user sees it play in the thread.
+`file` is workspace-relative. Optional `height` is pixels from 160 to 900, and goes after a **space**:
+
+```
+::scene{file="docs/cache.scene.json" height=480}
+```
+
+**Never put a comma between the attributes.** With a comma, BB does not read the line as a directive and shows it as plain text instead of the animation. `animation_validate` returns the exact line for a file, so copy that rather than composing it.
+
+After `Write`/`Edit` creates the file, emit the directive so the user sees it play in the thread.
 
 ### Why frames cannot be stamped
 

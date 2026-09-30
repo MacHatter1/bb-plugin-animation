@@ -14,6 +14,7 @@ import {
   joinHostPath,
   normalizeHostPath,
   readHostText,
+  relativeToRoot,
   readSiblingAssets,
   resolveFileSource,
   resolveInvokingHostPath,
@@ -25,6 +26,7 @@ import {
   DEFAULT_ANIMATION_JSON,
   ensureSceneJsonPath,
   fileNameFromPath,
+  sceneDirective,
   siblingExportPath,
   titleFromPath,
 } from "./src/template";
@@ -456,6 +458,29 @@ export default async function plugin(bb: BbPluginApi) {
   ): Promise<ResolvedFile> =>
     resolveInvokingHostPath(bb, filePath, { threadId });
 
+  /**
+   * The exact line that plays a scene in chat, for the agent to copy. Agents
+   * that compose the directive themselves tend to separate the attributes
+   * with a comma, which BB then shows as plain text.
+   */
+  const embedHint = async (
+    threadId: string | undefined,
+    absolutePath: string,
+  ): Promise<string[]> => {
+    if (!threadId) return [];
+    const workspace = await resolveThreadWorkspace(bb, threadId).catch(
+      () => null,
+    );
+    const file = workspace
+      ? relativeToRoot(workspace.rootPath, absolutePath)
+      : null;
+    if (!file || file.includes('"')) return [];
+    return [
+      `To play it in chat, put this on a line of its own: ${sceneDirective(file)}`,
+      `An optional height (160 to 900) follows a space, never a comma: ${sceneDirective(file, 480)}`,
+    ];
+  };
+
   bb.agents.registerTool({
     name: "animation_export_html",
     description:
@@ -509,6 +534,7 @@ export default async function plugin(bb: BbPluginApi) {
           result.warnings.length > 0
             ? `warnings:\n${result.warnings.join("\n")}`
             : "warnings: none",
+          ...(await embedHint(threadId, resolved.absolutePath)),
         ].join("\n");
       } catch (error) {
         return {
@@ -523,6 +549,8 @@ export default async function plugin(bb: BbPluginApi) {
     name: "animation_validate",
     description:
       "Parse a .scene.json animation and return errors, warnings, step count, and duration. Use before export or after editing.",
+    instructions:
+      'To play a scene inline in a reply, put ::scene{file="docs/flow.scene.json"} on a line of its own, using the workspace-relative path. Separate attributes with a space, never a comma: ::scene{file="docs/flow.scene.json" height=480}. animation_validate returns the exact line for a given file.',
     presentation: {
       label: {
         pending: "Validating animation",
@@ -559,6 +587,9 @@ export default async function plugin(bb: BbPluginApi) {
             (problem) =>
               `warning ${problem.path}: ${problem.message}`,
           ),
+          ...(errors.length === 0
+            ? await embedHint(threadId, resolved.absolutePath)
+            : []),
         ];
         return {
           content: [{ type: "text", text: lines.join("\n") }],

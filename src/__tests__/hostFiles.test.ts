@@ -4,11 +4,13 @@ import {
   isInsideRoot,
   joinHostPath,
   normalizeHostPath,
+  relativeToRoot,
 } from "../hostFiles";
 import {
   ensureSceneJsonPath,
   isAnimationDocumentPath,
   isSceneJsonPath,
+  sceneDirective,
   siblingExportPath,
   titleFromPath,
 } from "../template";
@@ -45,6 +47,29 @@ describe("host path helpers", () => {
     expect(normalizeHostPath("/../x")).toBeNull();
     expect(normalizeHostPath("C:\\a\\..\\b")).toBe("C:\\b");
     expect(joinHostPath("/work", "docs/../a.scene.json")).toBe("/work/a.scene.json");
+  });
+
+  it("gives a path relative to its root, or null outside it", () => {
+    expect(relativeToRoot("/work", "/work/docs/a.scene.json")).toBe(
+      "docs/a.scene.json",
+    );
+    expect(relativeToRoot("/work/", "/work/docs/../a.scene.json")).toBe(
+      "a.scene.json",
+    );
+    expect(relativeToRoot("C:\\Work", "c:\\work\\docs\\a.json")).toBe(
+      "docs/a.json",
+    );
+    expect(relativeToRoot("/work", "/elsewhere/a.scene.json")).toBeNull();
+    expect(relativeToRoot("/work", "/work")).toBeNull();
+  });
+
+  it("writes the chat directive with space-separated attributes", () => {
+    expect(sceneDirective("docs/a.scene.json")).toBe(
+      '::scene{file="docs/a.scene.json"}',
+    );
+    expect(sceneDirective("docs/a.scene.json", 480)).toBe(
+      '::scene{file="docs/a.scene.json" height=480}',
+    );
   });
 
   it("detects absolute paths", () => {

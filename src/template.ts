@@ -78,6 +78,18 @@ export function titleFromPath(filePath: string): string {
   return fileNameFromPath(filePath).replace(STRIP_DOCUMENT_SUFFIX_RE, "");
 }
 
+/**
+ * The chat directive that plays a scene inline.
+ *
+ * Attributes are separated by a space. BB parses directives like HTML
+ * attributes, so a comma between them makes the whole line plain text.
+ */
+export function sceneDirective(file: string, height?: number): string {
+  return height === undefined
+    ? `::scene{file="${file}"}`
+    : `::scene{file="${file}" height=${height}}`;
+}
+
 /** Rewrite a create-path to the canonical `.scene.json` suffix. */
 export function ensureSceneJsonPath(path: string): string {
   const trimmed = path.trim();

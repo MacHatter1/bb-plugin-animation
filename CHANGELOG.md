@@ -6,6 +6,13 @@ All notable changes to Animation are documented here. The format follows
 
 ## Unreleased
 
+### Fixed
+
+- Agents wrote chat embeds as `::scene{file="…",height=640}`, which BB shows
+  as plain text because directive attributes are separated by spaces. The
+  skill and README now show a directive with a height, and `animation_validate`
+  and `animation_export_html` return the exact line to paste.
+
 ## 0.1.1 - 2026-09-29
 
 ### Added

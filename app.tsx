@@ -16,7 +16,7 @@ import {
   AnimationDirective,
   AnimationOpener,
 } from "./src/components/AnimationEditor";
-import { ensureSceneJsonPath } from "./src/template";
+import { ensureSceneJsonPath, sceneDirective } from "./src/template";
 import "./app.css";
 
 function NewAnimationPanel({ threadId }: PluginThreadPanelProps) {
@@ -174,7 +174,7 @@ export default definePluginApp((app) => {
         run: ({ composer }) => {
           composer.updateText(
             (current) =>
-              `${current}${current.trim() === "" ? "" : "\n\n"}::scene{file="name.scene.json"}`,
+              `${current}${current.trim() === "" ? "" : "\n\n"}${sceneDirective("name.scene.json")}`,
           );
         },
       },

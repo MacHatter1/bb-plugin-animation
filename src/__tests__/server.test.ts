@@ -429,3 +429,54 @@ describe("export destinations", () => {
   });
 });
 
+type ToolResult = Awaited<
+  ReturnType<Awaited<ReturnType<typeof loadPlugin>>["behavior"]["callAgentTool"]>
+>;
+
+function toolText(result: ToolResult): string {
+  if (typeof result === "string") return result;
+  return result.content
+    .map((part) => (part.type === "text" ? part.text : ""))
+    .join("\n");
+}
+
+describe("chat embed hints", () => {
+  it("returns the exact directive to paste, with a workspace-relative path", async () => {
+    const { behavior } = await loadPlugin({
+      "/work/docs/flow.scene.json": DEFAULT_ANIMATION_JSON,
+    });
+    const validated = await behavior.callAgentTool(
+      "animation_validate",
+      { filePath: "docs/flow.scene.json" },
+      { threadId: "thr_1" },
+    );
+    const text = toolText(validated);
+    expect(text).toContain('::scene{file="docs/flow.scene.json"}');
+    expect(text).toContain('::scene{file="docs/flow.scene.json" height=480}');
+    expect(text).not.toMatch(/::scene\{[^}]*,/);
+
+    const exported = await behavior.callAgentTool(
+      "animation_export_html",
+      { filePath: "/work/docs/flow.scene.json" },
+      { threadId: "thr_1" },
+    );
+    expect(exported).toContain('::scene{file="docs/flow.scene.json"}');
+  });
+
+  it("gives no embed line for a scene outside the workspace or with errors", async () => {
+    const { behavior } = await loadPlugin({
+      "/elsewhere/flow.scene.json": DEFAULT_ANIMATION_JSON,
+      "/work/bad.scene.json": "{",
+    });
+    for (const filePath of ["/elsewhere/flow.scene.json", "/work/bad.scene.json"]) {
+      const result = await behavior.callAgentTool(
+        "animation_validate",
+        { filePath },
+        { threadId: "thr_1" },
+      );
+      const text = toolText(result);
+      expect(text).not.toContain("::scene");
+    }
+  });
+});
+
