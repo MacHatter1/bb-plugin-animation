@@ -6,6 +6,8 @@ All notable changes to Animation are documented here. The format follows
 
 ## Unreleased
 
+## 0.2.0 - 2026-09-30
+
 ### Added
 
 - Captions are shown as narration under the stage in the chat embed and the
