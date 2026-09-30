@@ -6,6 +6,46 @@ All notable changes to Animation are documented here. The format follows
 
 ## Unreleased
 
+### Added
+
+- Captions are shown as narration under the stage in the chat embed and the
+  exported page, not only in the editor. The export also shows a progress line.
+- Built-in motion: a part rises into place when it stops being hidden, the
+  parts one step changes start a beat apart in reading order, and active nodes
+  glow.
+- `focus` on a step zooms the stage to the parts it names, and glides there
+  from the previous framing. It applies to its own step only.
+- Edges route themselves. An edge that would cross another box arcs round it,
+  over the row going forwards and under it coming back, and two edges between
+  the same pair run in parallel lanes. Before, every edge was one straight
+  line, so these drew through boxes or on top of each other.
+- An edge is hidden while either of its ends is hidden, and an edge that a
+  step lights is not drawn until that step. Give it `"state": "idle"` to show
+  it from the start.
+- `"size": "title"` on a label draws it as the scene's heading.
+- A chat embed with no `height` takes the scene's own shape.
+- Design notes from `bb animation validate` and `animation_validate`, and a
+  badge in the editor. They cover clipped rows, text too wide for its box,
+  overlapping or off-stage parts, edges through boxes, unknown states, captions
+  shown too briefly, busy steps, steps where the picture stands still, loud
+  starts, busy or empty endings, rows that read as a status, traffic flowing
+  into a box that stays unlit, nothing revealed over time, a camera that never
+  moves and a focus that cuts off a lit edge. Each note gives the value to set. Notes
+  never fail validation.
+- `animation_validate` takes `targetSeconds`, and `bb animation validate` takes
+  `--seconds`, to check the scene against the length that was asked for.
+- `samples/retry.scene.json`, a reference scene that follows the recipe.
+
+### Changed
+
+- The bundled skill opens with an eight-step recipe, layout grids for two,
+  three and four boxes, and a duration table. Its worked example is the new
+  reference scene. The recipe was tuned by having Haiku 4.5 and Gemini 3.8
+  Flash author scenes from it and fixing what they got wrong.
+- Step durations in the starter and the cache-aside sample are long enough to
+  read their captions, and the skill's pacing advice now follows the caption's
+  word count.
+
 ## 0.1.2 - 2026-09-30
 
 ### Fixed

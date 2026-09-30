@@ -18,7 +18,7 @@ Play it in BB, embed it in chat, or export one HTML page to share.
 
 <br>
 
-<img src="screenshots/animation/queue-drain.png" alt="Queue drain scene: worker A acks item 1 into the sink while item 2 waits in the queue to be retried" width="900">
+<img src="screenshots/animation/retry-fail.jpg" alt="An exported scene zoomed to a worker and a store: the write between them fails in red, with the caption 'The write fails, so the job is never acknowledged' under the stage" width="900">
 
 </div>
 
@@ -58,47 +58,50 @@ boundary to retime it. <kbd>Space</kbd> plays, <kbd>⌘S</kbd> saves, and
 </td>
 <td width="50%" valign="top">
 
-### 📄 Plain JSON
+### 🎥 Motion built in
+
+Parts rise in when a step reveals them, a step's changes sweep left to right,
+and lit boxes glow. Add `focus` to a step and the stage zooms to the boxes it
+is about. None of it is scripted.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### 🗣️ Narrated
+
+Every step's caption shows under the stage in the editor, the chat embed and
+the export, with a progress line along the bottom of the exported page.
+
+</td>
+<td valign="top">
+
+### 🧭 Design notes
+
+`animation_validate` looks at the scene for an agent that cannot see it:
+clipped rows, overlapping boxes, captions too fast to read, nothing revealed
+over time. Each note gives the exact value to set.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### 💬 Embed and export
+
+`::scene{file="docs/flow.scene.json"}` plays the scene inside a message.
+Export writes one self-contained page that loops on its own, from the editor,
+the CLI, or an agent tool.
+
+</td>
+<td valign="top">
+
+### 📄 Plain JSON, agent-ready
 
 Parts plus an ordered list of steps, saved in a fixed key order so diffs stay
-small. Nimbalyst Animation `.anim.json` files open too.
-
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-### 💬 Chat embeds
-
-`::scene{file="docs/flow.scene.json"}` plays the scene inside a message. In the
-editor, click a part to quote its current state into the composer.
-
-</td>
-<td valign="top">
-
-### 🌐 HTML export
-
-Write one self-contained page that loops on its own. Click it to pause. Export
-from the editor, the CLI, or an agent tool.
-
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-### 🤖 Agent-ready
-
-A bundled skill teaches agents the format, geometry and canonical order.
-`animation_validate` reports errors and warnings before anyone opens the file.
-
-</td>
-<td valign="top">
-
-### 🎨 One palette everywhere
-
-Tones are semantic: accent, data, success, warning, error. A `stage.theme`
-palette sets the colours for the editor, embeds and export alike, with a fixed
-dark palette as the fallback.
+small. The bundled skill gives agents an eight-step recipe, a layout grid and
+a worked example to copy.
 
 </td>
 </tr>
@@ -146,7 +149,7 @@ bb plugin install path:$PWD --yes
 | **Thread Actions → New animation** | Creates a starter `.scene.json` in the thread's workspace and opens it. |
 | **Command palette** | `Animation: create .scene.json` opens the same panel when a thread is open. |
 | **Composer + menu** | **Embed scene** inserts a `::scene{file="…"}` directive. |
-| **Chat messages** | `::scene{file="…"}` plays inline. An optional height of 160 to 900 pixels goes after a space: `::scene{file="…" height=480}`. A comma between the two stops BB reading the line as a directive. |
+| **Chat messages** | `::scene{file="…"}` plays inline, with each step's caption beneath it. An optional height of 160 to 900 pixels goes after a space: `::scene{file="…" height=480}`. A comma between the two stops BB reading the line as a directive. |
 | **Settings → Installed plugins → Animation** | A short how-to. There is nothing to configure. If another JSON viewer wins, pin this one under **Settings → File openers**. |
 
 ## How it works
@@ -166,6 +169,13 @@ flowchart LR
 - **States, not keyframes.** A step assigns a `state` and a `tone` to parts,
   and a 320 ms CSS transition interpolates. States are cumulative, so a step
   only lists what changes.
+- **Motion comes from the renderer.** Showing a hidden part makes it rise into
+  place, parts changed by one step start a beat apart in reading order, and a
+  step's `focus` moves the camera. The file says what is true; it never says
+  how to move.
+- **Edges route themselves.** Neighbours get a straight line. An edge that
+  skips a box arcs round it, and a request and its reply run in separate
+  lanes.
 - **One parser everywhere.** The editor, CLI, agent tools and export all use
   the same parser. It repairs near-misses with a warning. Errors block saving
   and export.
@@ -173,9 +183,9 @@ flowchart LR
   unchanged document gives identical bytes.
 - **Same render inside and outside BB.** Export uses the editor's renderer and
   stage CSS, with the `stage.theme` palette or a fixed dark fallback.
-- **What it will not do.** It has no GIF or MP4 export, no motion paths and no
-  text that changes between steps. Parts appear, disappear and change colour.
-  Edge packets and the `scene-spin` spinner are the only continuous motion.
+- **What it will not do.** It has no GIF or MP4 export, parts cannot travel
+  from one place to another, and text cannot change between steps. There are
+  no font sizes beyond one title style for the heading.
 
 ## Safe by default
 
@@ -203,7 +213,7 @@ flowchart LR
 
 ```sh
 bb animation new docs/cache-read.scene.json         # create a starter scene
-bb animation validate docs/cache-read.scene.json    # parse it and report problems
+bb animation validate docs/cache-read.scene.json    # problems, plus design notes with fixes
 bb animation export docs/cache-read.scene.json      # write docs/cache-read.html
 bb animation export docs/cache-read.scene.json --out site/cache.html --json
 ```
@@ -214,7 +224,7 @@ bb animation export docs/cache-read.scene.json --out site/cache.html --json
 | Command | Does |
 | --- | --- |
 | `new <path> [--json]` | Creates a starter scene. The path is rewritten to end in `.scene.json`. |
-| `validate <path> [--json]` | Parses the file and prints errors, warnings, and step and part counts. Exits 1 on errors. |
+| `validate <path> [--seconds <n>] [--json]` | Parses the file and prints errors, warnings and design notes, each note with its fix. `--seconds` checks the length against the one asked for. Exits 1 on errors only; notes never fail it. |
 | `export <path> [--out <html-path>] [--json]` | Writes standalone HTML next to the scene, or to `--out`. Refuses a file with parse errors or no steps, and will not overwrite a file that is not an earlier export. |
 
 Relative paths resolve from the current directory, or from the thread's
@@ -243,18 +253,20 @@ bb plugin dev                      # rebuild and reload on every save
 server.ts        CLI, agent tools and the RPC the editor calls
 app.tsx          file opener, chat directive, New animation panel, settings page
 contract.ts      RPC schema shared by server and app
-src/core/        parser, serialiser, timeline and HTML sanitiser
+src/core/        parser, serialiser, timeline, camera, design notes and HTML sanitiser
 src/render/      scene SVG, stage CSS and the standalone export
 src/components/  editor, stage frame and step strip
 components/ui/   vendored BB UI primitives
-samples/         demo.scene.json, a cache-aside scene
+samples/         two scenes to copy: a cache-aside read and a job queue with retry
 skills/          the bundled agent skill
 docs/            logo
 screenshots/     README images
 ```
 
 **Tests** are Vitest unit tests for the parser, serialiser and timeline, the
-scene renderer, the HTML sanitiser and the host path helpers. A fake plugin host
+scene renderer, the camera and every design note, the HTML sanitiser and the
+host path helpers. They also check that the shipped samples, the starter and
+the skill's worked example pass the validator with no notes. A fake plugin host
 also drives the CLI and agent tools end to end: create, validate, export,
 refusing parse errors, and `.anim.json` files.
 
