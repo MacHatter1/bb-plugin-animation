@@ -133,8 +133,8 @@
   "steps": [
     {
       "id": "arrive",
-      "duration": 900,
-      "caption": "A read arrives for an order the service has served before.",
+      "duration": 2000,
+      "caption": "A read arrives for an order.",
       "set": {
         "client": {
           "state": "active",
@@ -148,7 +148,7 @@
     },
     {
       "id": "lookup",
-      "duration": 1000,
+      "duration": 2500,
       "caption": "The service asks the cache for the key.",
       "set": {
         "cache": {
@@ -163,7 +163,7 @@
     },
     {
       "id": "miss",
-      "duration": 900,
+      "duration": 1700,
       "caption": "The key is not there.",
       "set": {
         "cache": {
@@ -186,7 +186,7 @@
     },
     {
       "id": "fetch",
-      "duration": 1100,
+      "duration": 2300,
       "caption": "The read falls through to the primary.",
       "set": {
         "db": {
@@ -201,7 +201,7 @@
     },
     {
       "id": "read",
-      "duration": 800,
+      "duration": 1700,
       "caption": "The primary finds the row.",
       "set": {
         "db": {
@@ -212,7 +212,7 @@
     },
     {
       "id": "fill",
-      "duration": 1100,
+      "duration": 2800,
       "caption": "The row comes back and the cache writes it.",
       "set": {
         "cache": {
@@ -235,8 +235,8 @@
     },
     {
       "id": "settle",
-      "duration": 800,
-      "caption": "The primary goes quiet; the cache now holds the key.",
+      "duration": 2800,
+      "caption": "The primary goes quiet. The cache holds the key.",
       "set": {
         "db": {
           "state": "idle",
@@ -250,7 +250,7 @@
     },
     {
       "id": "serve",
-      "duration": 1000,
+      "duration": 2000,
       "caption": "The value returns to the caller.",
       "set": {
         "edgeRequest": {
@@ -269,8 +269,8 @@
     },
     {
       "id": "warm",
-      "duration": 900,
-      "caption": "The next read for the same key never leaves the cache.",
+      "duration": 3000,
+      "caption": "The next read for that key stays in the cache.",
       "set": {
         "edgeRequest": {
           "state": "flowing",
@@ -280,7 +280,7 @@
     },
     {
       "id": "quiet",
-      "duration": 1200,
+      "duration": 2300,
       "caption": "It stays warm until the entry expires.",
       "set": {
         "client": {

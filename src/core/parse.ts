@@ -487,8 +487,17 @@ function parsePart(
         "text",
         "align",
         "caps",
+        "size",
       ]);
       preserveInvalidTone(extras.parts[id]);
+      if (raw.size !== undefined && raw.size !== "title") {
+        problems.push({
+          level: "warning",
+          path: `${path}.size`,
+          message: 'The only label size is "title"; kept but not used.',
+        });
+        extras.parts[id].size = raw.size;
+      }
       const alignRaw = coerceString(raw.align);
       const align =
         alignRaw === "start" || alignRaw === "middle" || alignRaw === "end"
@@ -504,6 +513,7 @@ function parsePart(
         text,
         ...(align !== undefined ? { align } : {}),
         ...(raw.caps === true ? { caps: true } : {}),
+        ...(raw.size === "title" ? { size: "title" as const } : {}),
       };
     }
 
@@ -720,7 +730,45 @@ function parsePart(
   }
 }
 
-const STEP_KEYS = ["id", "duration", "caption", "set"];
+const STEP_KEYS = ["id", "duration", "caption", "focus", "set"];
+
+/**
+ * `focus`: one part id, or a list of them. Ids naming no part are kept and
+ * warned about, the same as an assignment to a renamed part, so a rename does
+ * not silently delete the camera move.
+ */
+function coerceFocus(
+  value: unknown,
+  path: string,
+  knownParts: Set<string>,
+  problems: Problem[]
+): string | string[] | undefined {
+  if (value === undefined) return undefined;
+  const ids =
+    typeof value === "string"
+      ? [value]
+      : Array.isArray(value) && value.every((item) => typeof item === "string")
+        ? (value as string[])
+        : null;
+  if (ids === null) {
+    problems.push({
+      level: "warning",
+      path: `${path}.focus`,
+      message: "Focus must be a part id or a list of part ids; kept but not used.",
+    });
+    return undefined;
+  }
+  for (const id of ids) {
+    if (!knownParts.has(id)) {
+      problems.push({
+        level: "warning",
+        path: `${path}.focus`,
+        message: `No part named "${id}"; focus ignores it.`,
+      });
+    }
+  }
+  return value as string | string[];
+}
 
 function parseStep(
   raw: unknown,
@@ -824,10 +872,14 @@ function parseStep(
   if (Object.keys(assignmentExtras).length > 0)
     extras.assignments[id] = assignmentExtras;
   const caption = coerceString(raw.caption);
+  const focus = coerceFocus(raw.focus, path, knownParts, problems);
+  if (raw.focus !== undefined && focus === undefined)
+    extras.steps[id].focus = raw.focus;
   return {
     id,
     duration,
     ...(caption !== undefined ? { caption } : {}),
+    ...(focus !== undefined ? { focus } : {}),
     ...(Object.keys(set).length > 0 ? { set } : {}),
   };
 }

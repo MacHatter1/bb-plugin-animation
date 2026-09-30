@@ -1,0 +1,361 @@
+{
+  "version": 1,
+  "stage": {
+    "width": 1200,
+    "height": 560,
+    "fps": 25
+  },
+  "parts": {
+    "claim": {
+      "type": "edge",
+      "from": "queue",
+      "to": "worker",
+      "text": "claim",
+      "packets": 3
+    },
+    "enqueue": {
+      "type": "edge",
+      "from": "producer",
+      "to": "queue",
+      "text": "push",
+      "packets": 3
+    },
+    "producer": {
+      "type": "node",
+      "label": "Producer",
+      "x": 60,
+      "y": 190,
+      "w": 195,
+      "h": 144,
+      "subtitle": "ORDERS API",
+      "rows": [
+        {
+          "key": "job",
+          "value": "resize #4182"
+        },
+        {
+          "key": "queue",
+          "value": "thumbnails"
+        }
+      ]
+    },
+    "queue": {
+      "type": "node",
+      "label": "Queue",
+      "x": 355,
+      "y": 190,
+      "w": 195,
+      "h": 144,
+      "subtitle": "FIFO / AT LEAST ONCE",
+      "rows": [
+        {
+          "key": "visibility",
+          "value": "30 s"
+        },
+        {
+          "key": "max tries",
+          "value": "3"
+        }
+      ]
+    },
+    "railClaim": {
+      "type": "label",
+      "x": 290,
+      "y": 470,
+      "text": "02 CLAIM",
+      "caps": true
+    },
+    "railDone": {
+      "type": "label",
+      "x": 980,
+      "y": 470,
+      "text": "05 DONE",
+      "caps": true
+    },
+    "railEnqueue": {
+      "type": "label",
+      "x": 60,
+      "y": 470,
+      "text": "01 ENQUEUE",
+      "caps": true
+    },
+    "railFail": {
+      "type": "label",
+      "x": 520,
+      "y": 470,
+      "text": "03 FAIL",
+      "caps": true
+    },
+    "railRetry": {
+      "type": "label",
+      "x": 750,
+      "y": 470,
+      "text": "04 RETRY",
+      "caps": true
+    },
+    "store": {
+      "type": "node",
+      "label": "Store",
+      "state": "hidden",
+      "x": 945,
+      "y": 190,
+      "w": 195,
+      "h": 144,
+      "subtitle": "OBJECT STORAGE",
+      "rows": [
+        {
+          "key": "bucket",
+          "value": "thumbs"
+        },
+        {
+          "key": "writes",
+          "value": "idempotent"
+        }
+      ]
+    },
+    "tagline": {
+      "type": "label",
+      "x": 60,
+      "y": 84,
+      "text": "A FAILED JOB IS RETRIED, NEVER LOST",
+      "caps": true
+    },
+    "title": {
+      "type": "label",
+      "x": 60,
+      "y": 56,
+      "text": "Job queue with retry",
+      "size": "title"
+    },
+    "worker": {
+      "type": "node",
+      "label": "Worker",
+      "state": "hidden",
+      "x": 650,
+      "y": 190,
+      "w": 195,
+      "h": 144,
+      "subtitle": "CONSUMER",
+      "rows": [
+        {
+          "key": "concurrency",
+          "value": "1"
+        },
+        {
+          "key": "timeout",
+          "value": "30 s"
+        }
+      ]
+    },
+    "write": {
+      "type": "edge",
+      "from": "worker",
+      "to": "store",
+      "text": "write",
+      "packets": 3
+    }
+  },
+  "steps": [
+    {
+      "id": "job",
+      "duration": 2500,
+      "caption": "A producer has a job to hand off.",
+      "set": {
+        "producer": {
+          "state": "active",
+          "tone": "accent"
+        },
+        "railEnqueue": {
+          "state": "active",
+          "tone": "accent"
+        }
+      }
+    },
+    {
+      "id": "enqueue",
+      "duration": 2300,
+      "caption": "It pushes the job onto the queue.",
+      "focus": [
+        "producer",
+        "queue"
+      ],
+      "set": {
+        "enqueue": {
+          "state": "flowing",
+          "tone": "accent"
+        },
+        "queue": {
+          "state": "active",
+          "tone": "accent"
+        }
+      }
+    },
+    {
+      "id": "worker",
+      "duration": 2800,
+      "caption": "A worker comes online with a store behind it.",
+      "set": {
+        "enqueue": {
+          "state": "idle"
+        },
+        "producer": {
+          "state": "idle"
+        },
+        "store": {
+          "state": "idle"
+        },
+        "worker": {
+          "state": "idle"
+        }
+      }
+    },
+    {
+      "id": "claim",
+      "duration": 1700,
+      "caption": "The worker claims the job.",
+      "focus": [
+        "queue",
+        "worker"
+      ],
+      "set": {
+        "claim": {
+          "state": "flowing",
+          "tone": "accent"
+        },
+        "railClaim": {
+          "state": "active",
+          "tone": "accent"
+        },
+        "railEnqueue": {
+          "state": "idle",
+          "tone": "neutral"
+        },
+        "worker": {
+          "state": "active",
+          "tone": "accent"
+        }
+      }
+    },
+    {
+      "id": "fail",
+      "duration": 2800,
+      "caption": "The write fails, so the job is never acknowledged.",
+      "focus": [
+        "worker",
+        "store"
+      ],
+      "set": {
+        "claim": {
+          "state": "idle"
+        },
+        "railClaim": {
+          "state": "idle",
+          "tone": "neutral"
+        },
+        "railFail": {
+          "state": "active",
+          "tone": "error"
+        },
+        "store": {
+          "state": "offline"
+        },
+        "worker": {
+          "state": "waiting"
+        },
+        "write": {
+          "state": "flowing",
+          "tone": "error"
+        }
+      }
+    },
+    {
+      "id": "retry",
+      "duration": 2000,
+      "caption": "The job returns to the queue.",
+      "focus": [
+        "queue",
+        "worker"
+      ],
+      "set": {
+        "claim": {
+          "state": "returning",
+          "tone": "warning"
+        },
+        "queue": {
+          "state": "waiting",
+          "tone": "warning"
+        },
+        "railFail": {
+          "state": "idle",
+          "tone": "neutral"
+        },
+        "railRetry": {
+          "state": "active",
+          "tone": "warning"
+        },
+        "worker": {
+          "state": "idle"
+        },
+        "write": {
+          "state": "idle"
+        }
+      }
+    },
+    {
+      "id": "again",
+      "duration": 2800,
+      "caption": "The worker claims it again and the write lands.",
+      "focus": [
+        "queue",
+        "worker",
+        "store"
+      ],
+      "set": {
+        "claim": {
+          "state": "flowing",
+          "tone": "accent"
+        },
+        "queue": {
+          "state": "idle",
+          "tone": "neutral"
+        },
+        "store": {
+          "state": "active",
+          "tone": "success"
+        },
+        "worker": {
+          "state": "active",
+          "tone": "accent"
+        },
+        "write": {
+          "state": "flowing",
+          "tone": "success"
+        }
+      }
+    },
+    {
+      "id": "done",
+      "duration": 2300,
+      "caption": "Every job is processed at least once.",
+      "set": {
+        "claim": {
+          "state": "idle"
+        },
+        "railDone": {
+          "state": "active",
+          "tone": "success"
+        },
+        "railRetry": {
+          "state": "idle",
+          "tone": "neutral"
+        },
+        "worker": {
+          "state": "idle"
+        },
+        "write": {
+          "state": "idle"
+        }
+      }
+    }
+  ]
+}

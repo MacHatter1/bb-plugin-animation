@@ -9,6 +9,11 @@
  */
 
 import type { AnimDocument, ResolvedPartState } from "../core/types";
+import {
+  cameraTransform,
+  staggerDelays,
+  type Camera,
+} from "../core/camera";
 import { renderScene } from "./scene";
 import type { HtmlAssets } from "../core/htmlParts";
 import { buildStageCss, resolveStageTheme, type ThemeTokens } from "./stageCss";
@@ -60,7 +65,11 @@ export function writeStageDocument(
 export function applyStates(
   frameDoc: Document,
   states: Map<string, ResolvedPartState>,
-  options: { immediate?: boolean } = {}
+  options: {
+    immediate?: boolean;
+    /** Part ids in reading order; parts changed together start in this order. */
+    order?: readonly string[];
+  } = {}
 ): void {
   const root = frameDoc.documentElement;
   if (!root) return;
@@ -69,16 +78,22 @@ export function applyStates(
     root.classList.add("scene-no-transition", "scene-no-animation");
   }
 
+  const changed: Array<{ id: string; el: Element }> = [];
   for (const [partId, state] of states) {
     const el = frameDoc.querySelector(`[data-part="${CSS.escape(partId)}"]`);
     if (!el) continue;
+    let didChange = false;
     if (el.getAttribute("data-state") !== state.state) {
       el.setAttribute("data-state", state.state);
+      didChange = true;
     }
     if (el.getAttribute("data-tone") !== state.tone) {
       el.setAttribute("data-tone", state.tone);
+      didChange = true;
     }
+    if (didChange) changed.push({ id: partId, el });
   }
+  staggerChanged(changed, options.immediate ? undefined : options.order);
 
   if (options.immediate) {
     // Flush the animation:none state before restoring packet animations. This
@@ -98,6 +113,39 @@ export function applyStates(
       root.classList.remove("scene-no-transition");
     }
   }
+}
+
+/**
+ * Give each changed part its start delay. With no order, as on a seek, every
+ * delay is cleared, so nothing lags behind the playhead.
+ */
+function staggerChanged(
+  changed: Array<{ id: string; el: Element }>,
+  order: readonly string[] | undefined
+): void {
+  const rank = new Map((order ?? []).map((id, index) => [id, index]));
+  // A region inside an html part moves with the part that holds it.
+  const rankOf = (id: string) =>
+    rank.get(id) ?? rank.get(id.split("/")[0]) ?? Number.MAX_SAFE_INTEGER;
+  const sorted = order
+    ? [...changed].sort((a, b) => rankOf(a.id) - rankOf(b.id))
+    : changed;
+  const delays = order ? staggerDelays(sorted.length) : [];
+  sorted.forEach(({ el }, index) => {
+    (el as SVGElement | HTMLElement).style?.setProperty(
+      "--scene-delay",
+      `${delays[index] ?? 0}ms`
+    );
+  });
+}
+
+/** Point the stage's camera. Call before `applyStates` so a seek covers both. */
+export function applyCamera(frameDoc: Document, camera: Camera): void {
+  const group = frameDoc.querySelector(".scene-camera");
+  const style = (group as SVGElement | null)?.style;
+  if (!style) return;
+  const transform = cameraTransform(camera);
+  if (style.transform !== transform) style.transform = transform;
 }
 
 /** Pause/resume every CSS transition and packet animation in the stage. */

@@ -11,9 +11,11 @@
  *    them declarative would mean React reconciling a document it does not own.
  */
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { AnimDocument, ResolvedPartState } from "../core/types";
+import { cameraAtStep, readingOrder } from "../core/camera";
 import {
+  applyCamera,
   applySelection,
   applyStates,
   partIdFromEvent,
@@ -28,6 +30,8 @@ export interface StageFrameProps {
   /** Bumped by the editor whenever the scene's structure changes. */
   sceneVersion: number;
   states: Map<string, ResolvedPartState>;
+  /** The step being shown, or -1 before any step. Decides the camera. */
+  stepIndex: number;
   /** True when the state change came from a seek rather than playback. */
   immediate: boolean;
   playing: boolean;
@@ -47,6 +51,7 @@ export function StageFrame({
   doc,
   sceneVersion,
   states,
+  stepIndex,
   immediate,
   playing,
   selectedPartId,
@@ -60,6 +65,8 @@ export function StageFrame({
   onSelectRef.current = onSelectPart;
   const onKeyDownRef = useRef(onKeyDown);
   onKeyDownRef.current = onKeyDown;
+  const camera = useMemo(() => cameraAtStep(doc, stepIndex), [doc, stepIndex]);
+  const order = useMemo(() => readingOrder(doc), [doc]);
 
   const writeScene = useCallback(() => {
     const frame = frameRef.current;
@@ -77,6 +84,7 @@ export function StageFrame({
       onKeyDownRef.current?.(event);
     });
 
+    applyCamera(frameDoc, camera);
     applyStates(frameDoc, states, { immediate: true });
     setStageAnimationsPaused(frameDoc, !playing);
     applySelection(frameDoc, selectedPartId);
@@ -84,7 +92,7 @@ export function StageFrame({
     // structural change, and reads whatever the current values are at that
     // moment. The effects below own the per-change updates.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc, tokens, assets, playing]);
+  }, [doc, tokens, assets, playing, camera]);
 
   useEffect(() => {
     writeScene();
@@ -94,9 +102,11 @@ export function StageFrame({
   useEffect(() => {
     const frameDoc = frameRef.current?.contentDocument;
     if (!frameDoc) return;
-    applyStates(frameDoc, states, { immediate });
+    // Camera first: on a seek, `applyStates` suppresses transitions for both.
+    applyCamera(frameDoc, camera);
+    applyStates(frameDoc, states, { immediate, order });
     setStageAnimationsPaused(frameDoc, !playing);
-  }, [states, immediate, playing]);
+  }, [states, immediate, playing, camera, order]);
 
   useEffect(() => {
     const frameDoc = frameRef.current?.contentDocument;

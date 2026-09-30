@@ -18,7 +18,7 @@ export const DEFAULT_ANIMATION_JSON = `{
   "steps": [
     {
       "id": "start",
-      "duration": 800,
+      "duration": 1200,
       "caption": "The scene begins.",
       "set": {
         "box": {
@@ -28,7 +28,7 @@ export const DEFAULT_ANIMATION_JSON = `{
     },
     {
       "id": "highlight",
-      "duration": 1000,
+      "duration": 1500,
       "caption": "The part becomes active.",
       "set": {
         "box": {

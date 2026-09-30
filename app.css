@@ -433,8 +433,20 @@
 }
 
 .scene-embed .scene-stage-frame {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   border: 0;
+}
+
+/* The narration, so an embed is an explainer and not just a diagram. */
+.scene-embed-caption {
+  margin: 0;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--foreground);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
 }
 
 .scene-embed-error {

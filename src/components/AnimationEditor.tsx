@@ -20,6 +20,7 @@ import {
   type Problem,
 } from "../core/parse";
 import { serializeDocument } from "../core/serialize";
+import { lintDocument } from "../core/lint";
 import { buildContextItems } from "../core/selectionContext";
 import { setStepDuration } from "../core/edits";
 import { htmlFileRefs, type HtmlAssets } from "../core/htmlParts";
@@ -370,6 +371,11 @@ export function AnimationEditor({
 
   const errors = problems.filter((problem) => problem.level === "error");
   const warnings = problems.filter((problem) => problem.level === "warning");
+  const hasParseErrors = errors.length > 0;
+  const advice = useMemo(
+    () => (hasParseErrors ? [] : lintDocument(doc)),
+    [doc, hasParseErrors],
+  );
   const currentStep =
     position.stepIndex >= 0 ? doc.steps[position.stepIndex] : undefined;
 
@@ -435,6 +441,16 @@ export function AnimationEditor({
               {warnings.length} warning{warnings.length === 1 ? "" : "s"}
             </span>
           ) : null}
+          {advice.length > 0 ? (
+            <span
+              className="scene-badge"
+              title={advice
+                .map((item) => `${item.path}: ${item.message}`)
+                .join("\n")}
+            >
+              {advice.length} design note{advice.length === 1 ? "" : "s"}
+            </span>
+          ) : null}
           {diskConflict ? (
             <>
               <Button
@@ -468,6 +484,7 @@ export function AnimationEditor({
               doc={doc}
               sceneVersion={sceneVersion.current}
               states={states}
+              stepIndex={position.stepIndex}
               immediate={immediate}
               playing={playback.playing}
               selectedPartId={selectedPartId}
@@ -539,11 +556,13 @@ export function AnimationDirective({
   openWorkspaceFile: ((path: string) => boolean) | null;
 }) {
   const file = attributes.file?.trim();
+  // With no usable height the embed takes the scene's own shape, so the stage
+  // is never letterboxed into a box the author did not choose.
   const heightRaw = Number(attributes.height ?? "");
   const height =
     Number.isFinite(heightRaw) && heightRaw >= 160 && heightRaw <= 900
       ? heightRaw
-      : 280;
+      : undefined;
 
   // Stable across renders: the loader re-reads the file whenever this changes,
   // and a streaming message re-renders constantly.
@@ -575,7 +594,11 @@ export function AnimationDirective({
   }
 
   return (
-    <div className="scene-embed" style={{ height }} ref={embedRef}>
+    <div
+      className="scene-embed"
+      style={height === undefined ? undefined : { height }}
+      ref={embedRef}
+    >
       <div className={cn("scene-embed-bar")}>
         <span className="scene-filename">{file}</span>
         {openWorkspaceFile ? (
@@ -656,17 +679,28 @@ function InlineStage({
     return <p className="scene-embed-error">Loading animation…</p>;
   }
 
+  const stepIndex = doc.steps.length > 0 ? step.index : -1;
+  const caption = doc.steps[stepIndex]?.caption;
+
   return (
-    <StageFrame
-      doc={doc}
-      sceneVersion={1}
-      states={states}
-      immediate={step.wrapped}
-      playing={visible}
-      selectedPartId={null}
-      tokens={FALLBACK_TOKENS}
-      assets={assets}
-      onSelectPart={() => undefined}
-    />
+    <>
+      <StageFrame
+        doc={doc}
+        sceneVersion={1}
+        states={states}
+        stepIndex={stepIndex}
+        immediate={step.wrapped}
+        playing={visible}
+        selectedPartId={null}
+        tokens={FALLBACK_TOKENS}
+        assets={assets}
+        onSelectPart={() => undefined}
+      />
+      {doc.steps.some((item) => item.caption) ? (
+        <p className="scene-embed-caption" aria-live="polite">
+          {caption ?? "\u00a0"}
+        </p>
+      ) : null}
+    </>
   );
 }

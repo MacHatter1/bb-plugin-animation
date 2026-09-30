@@ -11,7 +11,7 @@ BB surfaces:
 
 - Open `*.scene.json` in the file preview (Animation editor).
 - `bb animation new|validate|export` from a thread workspace.
-- Native tools `animation_export_html` and `animation_validate`.
+- Native tools `animation_export_html` and `animation_validate`. Validate returns design notes that each name the exact fix.
 - Inline chat preview: `::scene{file="docs/flow.scene.json"}`. Attributes are separated by a space, never a comma.
 - Click a part on the stage to quote its current state into chat.
 
@@ -22,6 +22,42 @@ BB surfaces:
 - Showing a failure and a recovery: the retry, the rollback, the rejected review.
 
 **Do not use it** when a static diagram says the same thing. If nothing changes between the first frame and the last, you want a Mermaid block or a still drawing, not an animation.
+
+## The recipe
+
+Follow these eight steps in order. They produce a good animation without any design judgement, and the validator in step 8 catches what you cannot see.
+
+1. **Write the story as 6 to 10 captions.** One sentence each, 10 words or fewer (12 is the limit). Read together, they explain the thing to someone who has never seen it. Captions are shown under the stage as narration, so they are the script. **If the user asked for a length, write one caption per 2.5 seconds**: 12 captions for 30 seconds.
+2. **Pick 3 to 6 boxes.** One `node` per actor in the story. More than 6 means the story is two animations. Give each box one or two rows of **fixed facts**: a name, a limit, a setting. Never a status such as `pending`, `verified` or `done`: text cannot change between steps, so a status is wrong for most of the run. Show change with states, not with text.
+3. **Place them on the grid** in the table below. Do not invent coordinates.
+4. **Hide what arrives later.** Every part the first caption does not need gets `"state": "hidden"`. Reveal it with `"state": "idle"` or `"active"` in the step whose caption introduces it. Hidden parts rise into place when shown. Edges need no hiding: an edge appears in the step that first lights it, and stays afterwards as a trace of the conversation.
+5. **Write one step per caption.** Light the one or two parts the caption is about, and **set an edge `"flowing"` whenever something passes between two boxes**: the moving packets are what make it an animation. When an edge flows into a box, set that box `"active"` in the same step, so the arrival shows. Any two boxes can be joined, not only neighbours. Switch off what the previous step lit: set its edges back to `"idle"`. **Every step must change something the viewer can see**; a step that only changes the caption is dead air, so merge it into its neighbour. Take `duration` from the table below.
+6. **Add `focus`** to steps that are about one or two boxes: `"focus": ["queue", "worker"]`. The stage zooms to them. If the step lights an edge, name the boxes at both ends of it. Leave `focus` off the first step, any step that reveals parts, and the last step.
+7. **End calm.** In the last step every edge is `"idle"`, the box that holds the result stays `"active"`, and there is no `focus`.
+8. **Validate, fix, repeat.** Run `animation_validate` (or `bb animation validate <path>`). If the user asked for a length, pass it as `targetSeconds` (`--seconds` on the CLI). Apply every design note exactly as written, then validate again. **Never delete an edge or a box to clear a note**: that deletes part of the story. Stop when it says `design notes: none`. Then put the `::scene` line it gives you in your reply.
+
+**Layout grid** for a `1200` by `560` stage, one row of boxes:
+
+| What | Where |
+| --- | --- |
+| Title `label` with `"size": "title"` | `x: 60, y: 56` |
+| Tagline `label` with `caps: true` | `x: 60, y: 84` |
+| 2 nodes | `y: 190`, `w: 220`, at `x: 250`, `730`. Edge `text` up to 31 characters |
+| 3 nodes | `y: 190`, `w: 220`, at `x: 60`, `490`, `920`. Edge `text` up to 24 characters |
+| 4 nodes | `y: 190`, `w: 195`, at `x: 60`, `355`, `650`, `945`. Edge `text` up to 10 characters |
+| Node height | `144` for a subtitle and 2 rows. In general `32 × rows + 80` with a subtitle, `32 × rows + 64` without |
+| Progress rail, 5 caps labels | `y: 470`, at `x: 60`, `290`, `520`, `750`, `980` |
+| Edges | Between any two boxes. Give every edge a short `text` saying what is sent. Neighbours get a straight line, so the text must fit the gap (limits above). An edge that skips a box arcs over the row, and its `text` can be longer |
+
+For 5 to 8 boxes use a `1200` by `700` stage with two rows: nodes at `y: 150` and `y: 370`, rail at `y: 620`. Each row uses the `x` positions above for the number of boxes in it.
+
+**Step duration** from the caption's word count (`400 + 260 × words`, rounded up):
+
+| Words | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `duration` | 1500 | 1700 | 2000 | 2300 | 2500 | 2800 | 3000 |
+
+The worked example at the end of this file follows this recipe exactly. Copy it and change the story.
 
 ## The mental model
 
@@ -77,8 +113,10 @@ Part ids are the keys. All four types share `label`, `tone`, and `state` (their 
 { "type": "edge", "from": "client", "to": "store", "text": "GET <sha>", "packets": 4 }
 ```
 
-- `from`/`to` are part ids. Drawn centre-to-centre and trimmed to the box borders, so stacked and side-by-side both look right.
+- `from`/`to` are part ids, and the route is worked out for you. Neighbours get a straight line between their facing sides. An edge that would cross another box arcs round it: over the row going forwards, under it coming back. Two edges between the same pair, such as a request and its reply, run in parallel lanes.
 - **A dangling `from`/`to` renders nothing at all** -- it looks like a broken renderer, not a broken document. Check your ids.
+- An edge is hidden while either of its ends is `hidden`, and comes back in its own state when both are shown. You do not hide edges yourself.
+- An edge that a step lights is not drawn until that step, so the lines appear as the story uses them. To show an edge from the start, give the part `"state": "idle"`. An edge that no step ever lights is a fixed relationship and is always drawn.
 - `packets` is how many squares travel the line while it is flowing (default 3). Set `0` for an edge that means a *relationship* rather than traffic. One trip takes 1.6s.
 - `text` draws a caption at the midpoint **on an opaque background plate** roughly `max(40, len × 7.6 + 16)` px wide. It will punch a hole through anything behind it. Only put `text` on an edge whose gap is wider than the plate.
 
@@ -90,7 +128,7 @@ Part ids are the keys. All four types share `label`, `tone`, and `state` (their 
 
 - `align`: `start` | `middle` | `end` (the anchor, at `x`).
 - `caps: true` gives the faint, tracked-out micro-caption style used for section headings.
-- **There is no font-size control.** Every label is 12px. Do not try to build a large title; build hierarchy with `caps`, tone, and position instead.
+- `"size": "title"` draws the label as the scene's heading: 24px, bold. Use it once, for the title. Every other label is 12px, so build the rest of the hierarchy with `caps`, tone, and position.
 
 **`shape`** -- a plain rect or circle, with optional centered text.
 
@@ -220,19 +258,21 @@ The state vocabulary is defined by the stylesheet, not the schema. Any other str
 | `label` | `idle` (default), `active` (takes its tone colour), `hidden` |
 | `shape` | `idle` (default, 14% tone fill), `active` (65% tone fill, reads as solid), `hidden` |
 
-`returning` is the most useful state in the set and the most under-used: a reply, a rejection, a rollback travelling back down the same wire. Reversing packets beats drawing a second edge -- two overlapping edges between one pair of nodes look like a rendering fault.
+`returning` is the most useful state in the set and the most under-used: a reply, a rejection, a rollback travelling back down the same wire. Use it when the reply is the same conversation. When the reply is its own message with its own name, draw a second edge the other way; the two run in separate lanes.
 
 ### steps
 
 ```json
-{ "id": "response", "duration": 1000,
+{ "id": "response", "duration": 2500,
   "caption": "The objects come back down the same wire.",
+  "focus": ["client", "store"],
   "set": { "fetch": { "state": "returning", "tone": "success" } } }
 ```
 
 - `id` is a readable slug, unique. It shows in the step strip.
-- `duration` is how long this step **holds** before the next begins, in ms (1..600000; the editor's drag-to-retime floor is 40ms).
-- `caption` is one sentence of narration. Read end to end, the captions should form a coherent paragraph -- they are also the animation's accessibility description.
+- `duration` is how long this step **holds** before the next begins, in ms (1..600000; the editor's drag-to-retime floor is 40ms). It has to be long enough to read the caption: `400 + 260 × words`.
+- `caption` is one sentence of narration, shown under the stage in the editor, the chat embed and the export. Read end to end, the captions should form a coherent paragraph -- they are also the animation's accessibility description.
+- `focus` is a part id, or a list of them, that the stage zooms to for this step. It frames those parts with some air, up to 2.4×, and glides there from the previous framing. **Focus is not cumulative**: it applies to its own step only, and a step without it shows the whole stage. Naming an edge frames both its ends. When a focused step lights an edge, include the boxes at both ends, or the traffic appears to come from nowhere.
 - `set` maps part id -> `{ state?, tone? }`. Omit either and it inherits.
 
 Playback **loops by default**, and the wrap is a hard cut: the stage jumps from your last step straight to the baseline-plus-first-step. Design that cut deliberately -- it should read as a reset, not as a glitch.
@@ -248,7 +288,7 @@ Layout is hand-placed, so these numbers matter.
 
 Row text is 11px mono: key at `x+28`, value right-aligned at `x + w − 28`. At `w = 228` you have room for roughly a 6-character key and a 12-character value.
 
-**Edges.** Keep every edge between **adjacent** boxes. An edge routes as a straight centre-to-centre line trimmed to the borders, so a diagonal across a grid will run straight through the cards in between. If two boxes you want to connect are not neighbours, move them.
+**Edges.** Join whichever boxes the story needs. Neighbours are joined by a straight line. An edge between boxes that are not neighbours arcs round the ones in between, over the row when it runs left to right and under it when it runs right to left, so leave about 140 of clear space above and below a row of boxes. The recipe's grid does.
 
 Leave the gap wide enough for what the edge carries: ~40px for a bare edge with packets, ~70px if it has `text`.
 
@@ -263,9 +303,9 @@ The editor rewrites the file on save with a fixed key order. **Hand-write it in 
 - `parts`: **sorted alphabetically by id**. Within a part: `type`, `label`, `tone`, `state`, then
   - node: `x`, `y`, `w`, `h`, `subtitle`, `rows`
   - edge: `from`, `to`, `text`, `packets`
-  - label: `x`, `y`, `text`, `align`, `caps`
+  - label: `x`, `y`, `text`, `align`, `caps`, `size`
   - shape: `x`, `y`, `w`, `h`, `shape`, `text`
-- `steps`: **document order** -- it is the animation. Within a step: `id`, `duration`, `caption`, `set`. `set` keys sorted alphabetically; each assignment `state` then `tone`.
+- `steps`: **document order** -- it is the animation. Within a step: `id`, `duration`, `caption`, `focus`, `set`. `set` keys sorted alphabetically; each assignment `state` then `tone`.
 - Two-space indent, one trailing newline.
 
 Unknown keys are preserved and written after the known ones in sorted order, so a field this build does not model still round-trips.
@@ -275,19 +315,20 @@ Unknown keys are preserved and written after the known ones in sorted order, so 
 Design around these; they are not bugs to work around.
 
 - **No text changes.** No part's `label`, `text`, `subtitle`, or `rows` can differ between steps. A counter that ticks `36 -> 24 -> 12` is impossible. Show quantity with shapes going `hidden`, and write static captions that stay true for the whole run (`"CLAIMED IN ORDER"`, not `"16 REMAINING"`).
-- **No movement.** `x`/`y` are fixed. Parts appear, disappear, and change colour; they do not travel. The only continuous motion in the format is edge packets and the `scene-spin` spinner (see sub-parts). Nothing else rotates, slides, or eases.
-- **No font sizes.** Labels are 12px, node titles 13px, rows and subtitles 11px.
+- **Parts do not travel.** `x`/`y` are fixed, so nothing moves from one place to another. The motion you get is built in, and you do not script it: a part rises into place when it stops being `hidden`, parts changed by the same step start a beat apart from left to right, a lit node glows, packets run along a flowing edge, and the camera glides to each step's `focus`.
+- **No font sizes**, apart from one heading: a label with `"size": "title"` is 24px. Other labels are 12px, node titles 13px, rows and subtitles 11px.
 - **No z-index.** Alphabetical ids, as above.
-- **No per-step easing or delay.** One transition duration (320ms) for everything.
+- **No per-step easing or delay.** Timings are fixed: 320ms for a colour change, 460ms for a part to arrive, 720ms for a camera move.
 
 ## Making a good one
 
 **Structure**
 
-- **8 to 12 steps.** Fewer feels like a slideshow, more and the viewer loses the thread.
-- **600-1200ms per step.** Under 400ms nobody reads the caption; over 1500ms it drags. Give the beat where something *changes meaning* the longest hold.
+- **6 to 10 steps.** Fewer feels like a slideshow, more and the viewer loses the thread. A 30-second piece is about 12.
+- **2 to 3 seconds per step.** The caption sets it: `400 + 260 × words` milliseconds. A step held for one second is never read, which is the most common reason an animation is hard to follow.
+- **Captions of 10 words or fewer.** Short captions are what keep the whole thing brisk. To go faster, cut words, not durations.
 - **One idea per step.** If a caption needs "and", it is two steps.
-- **Total 8-15 seconds.** It loops; it does not need to be a documentary.
+- **Total 15 to 30 seconds.** It loops; it does not need to be a documentary.
 
 **Layout**
 
@@ -302,6 +343,8 @@ Design around these; they are not bugs to work around.
 - **Land on a resolution.** The last step should look settled -- one tone, everything quiet - not mid-flight.
 - **Animate the interesting part.** The beat worth the viewer's attention is almost never the happy path. It is the retry, the cache miss, the review that sends the work back. Use `waiting` and `returning` for it. An explainer that only shows success explains nothing.
 - Do not light every part in step 1. Start quiet and let the scene fill in; that is most of the perceived quality.
+- **Reveal, do not just recolour.** A scene where every box is on screen from the first frame is a wiring diagram. Start the later parts `hidden` and bring each in when the story reaches it.
+- **Move the camera.** `focus` on the one or two boxes a step is about makes them big enough to read, and the glide between framings is the strongest motion the format has. Alternate: whole stage to establish, focus for the detail, whole stage to finish.
 
 **Colour**
 
@@ -313,8 +356,9 @@ Design around these; they are not bugs to work around.
 1. **Sketch the steps first, in prose.** Write the captions before you place a single coordinate. If the captions do not read as a paragraph, the animation will not read either.
 2. **Place the scene on a grid.** Nodes and their coordinates, then labels, then edges last -- edges are constrained by where the boxes ended up.
 3. **Write the steps as deltas**, in canonical order.
-4. **Write the file and validate it.** Name it in kebab-case with the `.scene.json` extension. Run `bb animation validate <path>` or `animation_validate`. Then tell the user to open the file in BB's Animation editor so they can scrub it.
-5. **Iterate on geometry from what you wrote**: node height vs row count, edge gaps vs edge `text`, cumulative states that never turn off, a final frame with too much lit at once.
+4. **Write the file and validate it.** Name it in kebab-case with the `.scene.json` extension. Run `bb animation validate <path>` or `animation_validate`.
+5. **Apply the design notes, then validate again.** You cannot see the result, so the validator looks for you: rows that do not fit, boxes that overlap, text too wide for its box, an edge through a card, a state that is a typo, captions shown too briefly, nothing revealed over time, an ending that is still busy. Each note gives the exact value to set. Keep going until it reports `design notes: none`.
+6. **Show it.** Put the `::scene` line from the validator in your reply, and tell the user they can open the file in BB's Animation editor to scrub it.
 
 If the user gave you a style reference image, match its *vocabulary* -- caps micro-labels, card density, how much is dim at rest - rather than trying to reproduce it pixel for pixel. Say plainly which parts of it the format cannot express.
 
@@ -327,7 +371,7 @@ animation_export_html { filePath: "docs/cache.scene.json" }
 -> docs/cache.html
 ```
 
-Pass `outputPath` to put it somewhere else; a relative path resolves the same way as `filePath`. It refuses to export a document with parse errors, and returns any warnings alongside the result. It only overwrites an earlier Animation export: if another file already sits at the output path, including the scene itself, it stops with an error, so pick a different `outputPath` rather than deleting the user's file. Clicking the exported page pauses it.
+Pass `outputPath` to put it somewhere else; a relative path resolves the same way as `filePath`. It refuses to export a document with parse errors, and returns any warnings alongside the result. It only overwrites an earlier Animation export: if another file already sits at the output path, including the scene itself, it stops with an error, so pick a different `outputPath` rather than deleting the user's file. The exported page shows each step's caption under the stage and a progress line along the bottom. Clicking it pauses it.
 
 **There is no GIF or MP4 export in this BB plugin.** If the destination cannot run HTML, say so and offer the standalone HTML anyway, or a screenshot of one step. Do not pretend a GIF tool exists.
 
@@ -359,146 +403,401 @@ Worth knowing, because it rules out the obvious shortcut: interpolation is CSS t
 
 ## Common mistakes
 
+The validator reports every row marked ✓ below as a design note with the fix worked out. Run it rather than checking these by hand.
+
 | Symptom | Cause |
 | --- | --- |
-| An edge is invisible | `from`/`to` names a part that does not exist. Dangling edges render as nothing. |
-| A row is missing from a node | `h` is too small. `h = 32 × rows + 80` with a subtitle. |
-| A state does nothing | Typo. Unknown state strings parse fine and render as `idle`. |
-| An edge label sits on top of a card | The gap is narrower than the label plate. Widen the gap or drop the `text`. |
+| Nobody can follow it ✓ | Captions are held for about a second. Use `400 + 260 × words`. |
+| It looks like a static diagram ✓ | Every part is visible from the start and the camera never moves. Hide later parts and add `focus`. |
+| An edge is invisible ✓ | `from`/`to` names a part that does not exist. Dangling edges render as nothing. |
+| A row is missing from a node ✓ | `h` is too small. `h = 32 × rows + 80` with a subtitle. |
+| A state does nothing ✓ | Typo. Unknown state strings parse fine and render as `idle`. |
+| An edge label sits on top of a card ✓ | The gap is narrower than the label plate. Widen the gap or drop the `text`. |
 | A part is hidden behind another | Alphabetical draw order. Rename it to sort later. |
-| Something stays lit forever | Cumulative states. You never set it back to `idle`. |
+| Something stays lit forever ✓ | Cumulative states. You never set it back to `idle`. |
 | The whole file reformats on first save | It was not written in canonical order. |
-| A line crosses a card | The two boxes are not adjacent. Move them, do not fight the router. |
+| A line crosses a card ✓ | Rare: edges arc round boxes on their own. It only happens when there is no clear space above or below the row. |
+| A box says something untrue ✓ | A row holds a status such as `verified`. Rows never change, so use fixed facts. |
+| It ends on nothing ✓ | The last step switched every box off. Keep the result lit. |
+| Traffic arrives and nothing happens ✓ | An edge flows into a box that stays grey. Set the box `"active"` in the same step. |
+| The picture stands still ✓ | A step changes nothing, or only changes things outside the zoomed frame. Light something in frame or merge the step. |
+| It is the wrong length ✓ | Pass `targetSeconds` to the validator and add or merge steps. |
 
 ## Worked example
 
-A complete, canonical, three-part file. Copy it and grow it.
+A complete, canonical file that follows the recipe: a job queue that retries a failed job. It validates with `design notes: none`. Copy it, keep the grid, and change the story.
 
 ```json
 {
   "version": 1,
   "stage": {
-    "width": 1080,
-    "height": 420,
+    "width": 1200,
+    "height": 560,
     "fps": 25
   },
   "parts": {
-    "caption": {
+    "claim": {
+      "type": "edge",
+      "from": "queue",
+      "to": "worker",
+      "text": "claim",
+      "packets": 3
+    },
+    "enqueue": {
+      "type": "edge",
+      "from": "producer",
+      "to": "queue",
+      "text": "push",
+      "packets": 3
+    },
+    "producer": {
+      "type": "node",
+      "label": "Producer",
+      "x": 60,
+      "y": 190,
+      "w": 195,
+      "h": 144,
+      "subtitle": "ORDERS API",
+      "rows": [
+        {
+          "key": "job",
+          "value": "resize #4182"
+        },
+        {
+          "key": "queue",
+          "value": "thumbnails"
+        }
+      ]
+    },
+    "queue": {
+      "type": "node",
+      "label": "Queue",
+      "x": 355,
+      "y": 190,
+      "w": 195,
+      "h": 144,
+      "subtitle": "FIFO / AT LEAST ONCE",
+      "rows": [
+        {
+          "key": "visibility",
+          "value": "30 s"
+        },
+        {
+          "key": "max tries",
+          "value": "3"
+        }
+      ]
+    },
+    "railClaim": {
       "type": "label",
-      "x": 80,
-      "y": 48,
-      "text": "READ THROUGH CACHE",
+      "x": 290,
+      "y": 470,
+      "text": "02 CLAIM",
       "caps": true
     },
-    "cache": {
+    "railDone": {
+      "type": "label",
+      "x": 980,
+      "y": 470,
+      "text": "05 DONE",
+      "caps": true
+    },
+    "railEnqueue": {
+      "type": "label",
+      "x": 60,
+      "y": 470,
+      "text": "01 ENQUEUE",
+      "caps": true
+    },
+    "railFail": {
+      "type": "label",
+      "x": 520,
+      "y": 470,
+      "text": "03 FAIL",
+      "caps": true
+    },
+    "railRetry": {
+      "type": "label",
+      "x": 750,
+      "y": 470,
+      "text": "04 RETRY",
+      "caps": true
+    },
+    "store": {
       "type": "node",
-      "label": "Cache",
-      "x": 420,
-      "y": 130,
-      "w": 240,
-      "h": 176,
-      "subtitle": "LRU / 512 MB",
+      "label": "Store",
+      "state": "hidden",
+      "x": 945,
+      "y": 190,
+      "w": 195,
+      "h": 144,
+      "subtitle": "OBJECT STORAGE",
       "rows": [
-        { "key": "hit", "value": "0.4 ms" },
-        { "key": "miss", "value": "18 ms" },
-        { "key": "keys", "value": "12.4 K" }
+        {
+          "key": "bucket",
+          "value": "thumbs"
+        },
+        {
+          "key": "writes",
+          "value": "idempotent"
+        }
       ]
     },
-    "client": {
+    "tagline": {
+      "type": "label",
+      "x": 60,
+      "y": 84,
+      "text": "A FAILED JOB IS RETRIED, NEVER LOST",
+      "caps": true
+    },
+    "title": {
+      "type": "label",
+      "x": 60,
+      "y": 56,
+      "text": "Job queue with retry",
+      "size": "title"
+    },
+    "worker": {
       "type": "node",
-      "label": "Client",
-      "x": 80,
-      "y": 130,
-      "w": 220,
-      "h": 176,
-      "subtitle": "GET /user/42",
+      "label": "Worker",
+      "state": "hidden",
+      "x": 650,
+      "y": 190,
+      "w": 195,
+      "h": 144,
+      "subtitle": "CONSUMER",
       "rows": [
-        { "key": "attempt", "value": "1" },
-        { "key": "budget", "value": "50 ms" },
-        { "key": "result" }
+        {
+          "key": "concurrency",
+          "value": "1"
+        },
+        {
+          "key": "timeout",
+          "value": "30 s"
+        }
       ]
     },
-    "fetch": {
+    "write": {
       "type": "edge",
-      "from": "client",
-      "to": "cache",
-      "text": "get",
+      "from": "worker",
+      "to": "store",
+      "text": "write",
       "packets": 3
-    },
-    "load": {
-      "type": "edge",
-      "from": "cache",
-      "to": "origin",
-      "packets": 3
-    },
-    "origin": {
-      "type": "node",
-      "label": "Origin",
-      "x": 780,
-      "y": 130,
-      "w": 220,
-      "h": 176,
-      "subtitle": "POSTGRES",
-      "rows": [
-        { "key": "rows", "value": "1" },
-        { "key": "cost", "value": "18 ms" },
-        { "key": "load", "value": "moderate" }
-      ]
     }
   },
   "steps": [
     {
-      "id": "ask",
-      "duration": 800,
-      "caption": "The client asks the cache for a key.",
+      "id": "job",
+      "duration": 2500,
+      "caption": "A producer has a job to hand off.",
       "set": {
-        "client": { "state": "active", "tone": "accent" },
-        "fetch": { "state": "flowing", "tone": "accent" }
+        "producer": {
+          "state": "active",
+          "tone": "accent"
+        },
+        "railEnqueue": {
+          "state": "active",
+          "tone": "accent"
+        }
       }
     },
     {
-      "id": "miss",
-      "duration": 900,
-      "caption": "It is not there, so the client waits.",
+      "id": "enqueue",
+      "duration": 2300,
+      "caption": "It pushes the job onto the queue.",
+      "focus": [
+        "producer",
+        "queue"
+      ],
       "set": {
-        "cache": { "state": "active", "tone": "warning" },
-        "client": { "state": "waiting", "tone": "warning" },
-        "fetch": { "state": "idle" }
+        "enqueue": {
+          "state": "flowing",
+          "tone": "accent"
+        },
+        "queue": {
+          "state": "active",
+          "tone": "accent"
+        }
       }
     },
     {
-      "id": "load",
-      "duration": 1100,
-      "caption": "The cache reads through to the origin.",
+      "id": "worker",
+      "duration": 2800,
+      "caption": "A worker comes online with a store behind it.",
       "set": {
-        "load": { "state": "flowing", "tone": "data" },
-        "origin": { "state": "active", "tone": "data" }
+        "enqueue": {
+          "state": "idle"
+        },
+        "producer": {
+          "state": "idle"
+        },
+        "store": {
+          "state": "idle"
+        },
+        "worker": {
+          "state": "idle"
+        }
       }
     },
     {
-      "id": "fill",
-      "duration": 900,
-      "caption": "The row comes back and the entry is filled.",
+      "id": "claim",
+      "duration": 1700,
+      "caption": "The worker claims the job.",
+      "focus": [
+        "queue",
+        "worker"
+      ],
       "set": {
-        "cache": { "state": "active", "tone": "success" },
-        "load": { "state": "returning", "tone": "success" }
+        "claim": {
+          "state": "flowing",
+          "tone": "accent"
+        },
+        "railClaim": {
+          "state": "active",
+          "tone": "accent"
+        },
+        "railEnqueue": {
+          "state": "idle",
+          "tone": "neutral"
+        },
+        "worker": {
+          "state": "active",
+          "tone": "accent"
+        }
       }
     },
     {
-      "id": "serve",
-      "duration": 1000,
-      "caption": "The client gets its answer; the next read will hit.",
+      "id": "fail",
+      "duration": 2800,
+      "caption": "The write fails, so the job is never acknowledged.",
+      "focus": [
+        "worker",
+        "store"
+      ],
       "set": {
-        "client": { "state": "active", "tone": "success" },
-        "fetch": { "state": "returning", "tone": "success" },
-        "load": { "state": "idle" },
-        "origin": { "state": "idle", "tone": "neutral" }
+        "claim": {
+          "state": "idle"
+        },
+        "railClaim": {
+          "state": "idle",
+          "tone": "neutral"
+        },
+        "railFail": {
+          "state": "active",
+          "tone": "error"
+        },
+        "store": {
+          "state": "offline"
+        },
+        "worker": {
+          "state": "waiting"
+        },
+        "write": {
+          "state": "flowing",
+          "tone": "error"
+        }
+      }
+    },
+    {
+      "id": "retry",
+      "duration": 2000,
+      "caption": "The job returns to the queue.",
+      "focus": [
+        "queue",
+        "worker"
+      ],
+      "set": {
+        "claim": {
+          "state": "returning",
+          "tone": "warning"
+        },
+        "queue": {
+          "state": "waiting",
+          "tone": "warning"
+        },
+        "railFail": {
+          "state": "idle",
+          "tone": "neutral"
+        },
+        "railRetry": {
+          "state": "active",
+          "tone": "warning"
+        },
+        "worker": {
+          "state": "idle"
+        },
+        "write": {
+          "state": "idle"
+        }
+      }
+    },
+    {
+      "id": "again",
+      "duration": 2800,
+      "caption": "The worker claims it again and the write lands.",
+      "focus": [
+        "queue",
+        "worker",
+        "store"
+      ],
+      "set": {
+        "claim": {
+          "state": "flowing",
+          "tone": "accent"
+        },
+        "queue": {
+          "state": "idle",
+          "tone": "neutral"
+        },
+        "store": {
+          "state": "active",
+          "tone": "success"
+        },
+        "worker": {
+          "state": "active",
+          "tone": "accent"
+        },
+        "write": {
+          "state": "flowing",
+          "tone": "success"
+        }
+      }
+    },
+    {
+      "id": "done",
+      "duration": 2300,
+      "caption": "Every job is processed at least once.",
+      "set": {
+        "claim": {
+          "state": "idle"
+        },
+        "railDone": {
+          "state": "active",
+          "tone": "success"
+        },
+        "railRetry": {
+          "state": "idle",
+          "tone": "neutral"
+        },
+        "worker": {
+          "state": "idle"
+        },
+        "write": {
+          "state": "idle"
+        }
       }
     }
   ]
 }
 ```
 
-Note what it does: starts quiet, holds longest on the beat that costs 18ms, uses `waiting` for the stall and `returning` for both replies, sets `fetch` and `load` back to `idle` once they are done, and ends on one tone with the origin dimmed back out.
+What it does, step by step:
 
-A longer cache-aside sample ships with the plugin at `samples/demo.scene.json`.
+- **Starts with two boxes.** `worker` and `store` begin `hidden`, and rise in at the `worker` step, a beat apart from left to right. Their edges appear with them.
+- **Narrates every step** in 9 words or fewer, with each `duration` taken from the word count.
+- **Zooms to the beat.** `enqueue`, `claim`, `fail`, `retry` and `again` each `focus` on the boxes involved. `job`, `worker` and `done` show the whole stage, so the viewer sees where they are before and after.
+- **Shows the failure**, which is the point of the story: `offline` for the store, `waiting` for the worker, then `returning` to send the job back down the same edge.
+- **Switches things off.** Each step sets the previous step's edge back to `idle`, and the rail label moves along.
+- **Ends calm**: every edge idle, one node lit, whole stage.
+
+The same file ships with the plugin at `samples/retry.scene.json`. A shorter three-box scene is at `samples/demo.scene.json`.

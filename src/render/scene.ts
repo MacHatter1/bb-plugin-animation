@@ -24,6 +24,7 @@ import type {
 import { DEFAULT_STATE, DEFAULT_TONE } from "../core/types";
 import { sanitizeHtml } from "../core/sanitizeHtml";
 import { resolveHtmlMarkup, type HtmlAssets } from "../core/htmlParts";
+import { routeEdge } from "../core/route";
 
 /** Escape text for XML content and attribute values. */
 export function escapeXml(value: string): string {
@@ -33,55 +34,6 @@ export function escapeXml(value: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
-}
-
-interface Rect {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
-function rectOf(part: Part): Rect | null {
-  if (part.type === "node" || part.type === "shape" || part.type === "html") {
-    return { x: part.x, y: part.y, w: part.w, h: part.h };
-  }
-  if (part.type === "label") {
-    return { x: part.x, y: part.y, w: 0, h: 0 };
-  }
-  return null;
-}
-
-function centerOf(rect: Rect): { x: number; y: number } {
-  return { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
-}
-
-/**
- * Where a line from `rect`'s centre toward `toward` leaves the rectangle.
- *
- * Edges are drawn centre-to-centre and then trimmed to the box borders, so an
- * edge looks correct whether its endpoints are side by side or stacked. Doing
- * it geometrically avoids the usual "assume left-to-right" bug that shows up
- * the first time someone stacks two nodes vertically.
- */
-function edgeAnchor(
-  rect: Rect,
-  toward: { x: number; y: number }
-): { x: number; y: number } {
-  const c = centerOf(rect);
-  const dx = toward.x - c.x;
-  const dy = toward.y - c.y;
-  if (dx === 0 && dy === 0) return c;
-
-  const halfW = rect.w / 2;
-  const halfH = rect.h / 2;
-  if (halfW === 0 || halfH === 0) return c;
-
-  // Scale the direction vector until it hits whichever border comes first.
-  const scaleX = dx === 0 ? Infinity : halfW / Math.abs(dx);
-  const scaleY = dy === 0 ? Infinity : halfH / Math.abs(dy);
-  const scale = Math.min(scaleX, scaleY);
-  return { x: c.x + dx * scale, y: c.y + dy * scale };
 }
 
 function partAttrs(id: string, part: Part, extraClass: string): string {
@@ -184,23 +136,11 @@ function renderEdgePackets(part: EdgePart, d: string): string {
 }
 
 function renderEdge(id: string, part: EdgePart, doc: AnimDocument): string {
-  const fromPart = doc.parts[part.from];
-  const toPart = doc.parts[part.to];
-  const fromRect = fromPart ? rectOf(fromPart) : null;
-  const toRect = toPart ? rectOf(toPart) : null;
-  if (!fromRect || !toRect) {
-    // A dangling edge renders as nothing rather than as a line to the origin,
-    // which would look like a bug in the animation rather than in the document.
-    return "";
-  }
-
-  const a = edgeAnchor(fromRect, centerOf(toRect));
-  const b = edgeAnchor(toRect, centerOf(fromRect));
-  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-
-  const d = `M${a.x.toFixed(1)} ${a.y.toFixed(1)} L${b.x.toFixed(
-    1
-  )} ${b.y.toFixed(1)}`;
+  // A dangling edge renders as nothing rather than as a line to the origin,
+  // which would look like a bug in the animation rather than in the document.
+  const route = routeEdge(doc, id);
+  if (!route) return "";
+  const { d } = route;
 
   const pieces: string[] = [];
   pieces.push(`<path class="scene-edge-line" d="${d}"/>`);
@@ -209,12 +149,11 @@ function renderEdge(id: string, part: EdgePart, doc: AnimDocument): string {
   pieces.push(`<path class="scene-edge-flow" pathLength="1" d="${d}"/>`);
   pieces.push(renderEdgePackets(part, d));
 
-  // Arrow head, rotated along the line.
-  const angle = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+  // Arrow head, rotated to the direction the line arrives from.
   pieces.push(
-    `<g class="scene-edge-arrow" transform="translate(${b.x.toFixed(
+    `<g class="scene-edge-arrow" transform="translate(${route.end.x.toFixed(
       1
-    )} ${b.y.toFixed(1)}) rotate(${angle.toFixed(1)})">` +
+    )} ${route.end.y.toFixed(1)}) rotate(${route.angle.toFixed(1)})">` +
       `<path d="M-10 -6 L0 0 L-10 6"/></g>`
   );
 
@@ -222,9 +161,9 @@ function renderEdge(id: string, part: EdgePart, doc: AnimDocument): string {
     const label = escapeXml(part.text);
     const width = Math.max(40, label.length * 7.6 + 16);
     pieces.push(
-      `<g class="scene-edge-label" transform="translate(${mid.x.toFixed(
+      `<g class="scene-edge-label" transform="translate(${route.label.x.toFixed(
         1
-      )} ${mid.y.toFixed(1)})">` +
+      )} ${route.label.y.toFixed(1)})">` +
         `<rect x="${(-width / 2).toFixed(1)}" y="-11" width="${width.toFixed(
           1
         )}" height="20" rx="3"/>` +
@@ -240,7 +179,12 @@ function renderEdge(id: string, part: EdgePart, doc: AnimDocument): string {
 function renderLabel(id: string, part: LabelPart): string {
   const anchor =
     part.align === "end" ? "end" : part.align === "middle" ? "middle" : "start";
-  const cls = part.caps ? "scene-label scene-label-caps" : "scene-label";
+  const cls =
+    part.size === "title"
+      ? "scene-label scene-label-title"
+      : part.caps
+        ? "scene-label scene-label-caps"
+        : "scene-label";
   return (
     `<text ${partAttrs(id, part, `scene-part ${cls}`)} x="${part.x}" y="${
       part.y
@@ -351,6 +295,10 @@ export function renderScene(doc: AnimDocument, assets?: HtmlAssets): string {
     `<svg class="scene-stage" xmlns="http://www.w3.org/2000/svg" ` +
     `viewBox="0 0 ${doc.stage.width} ${doc.stage.height}" ` +
     `preserveAspectRatio="xMidYMid meet" role="img" ` +
-    `aria-label="${escapeXml(sceneAriaLabel(doc))}">${body}</svg>`
+    // Everything sits inside one group, so a step's `focus` can zoom the whole
+    // scene by setting a single transform instead of touching every part.
+    `aria-label="${escapeXml(
+      sceneAriaLabel(doc)
+    )}"><g class="scene-camera">${body}</g></svg>`
   );
 }

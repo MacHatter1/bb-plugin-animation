@@ -133,7 +133,70 @@ export function resolveAtStep(
   for (let i = 0; i <= stepIndex && i < doc.steps.length; i += 1) {
     applyStep(states, doc.steps[i]);
   }
+  hideUnusedEdges(doc, states, stepIndex);
+  hideOrphanEdges(doc, states);
   return states;
+}
+
+/** Edge states that carry traffic, as opposed to a line that is just there. */
+export const LIT_EDGE_STATES: readonly string[] = ["flowing", "returning", "active"];
+
+/**
+ * An edge the story lights later is not drawn until the story gets there.
+ *
+ * Without this, every edge of a scene is on screen from the first frame, with
+ * its label, so the viewer reads the whole conversation before it happens and
+ * nothing arrives. With it the lines appear as they are used, and stay
+ * afterwards as a trace of what has been said.
+ *
+ * Two kinds of edge are left alone. One that no step ever lights is a fixed
+ * relationship, not a message, so it is always shown. One whose part sets a
+ * `state` was placed deliberately, so `"state": "idle"` is how an author says
+ * "show this from the start".
+ */
+function hideUnusedEdges(
+  doc: AnimDocument,
+  states: Map<string, ResolvedPartState>,
+  stepIndex: number
+): void {
+  for (const [id, part] of Object.entries(doc.parts)) {
+    if (part.type !== "edge" || part.state !== undefined) continue;
+    const firstLit = doc.steps.findIndex((step) => {
+      const state = step.set?.[id]?.state;
+      return state !== undefined && LIT_EDGE_STATES.includes(state);
+    });
+    if (firstLit === -1 || stepIndex >= firstLit) continue;
+    const current = states.get(id);
+    // A step that set it to something else first, such as "idle", showed it.
+    const touched = doc.steps
+      .slice(0, stepIndex + 1)
+      .some((step) => step.set?.[id]?.state !== undefined);
+    if (current && !touched) states.set(id, { ...current, state: "hidden" });
+  }
+}
+
+/**
+ * An edge is only drawn while both of its ends are.
+ *
+ * A line running to a box that has not appeared yet points at nothing, and it
+ * is an easy thing to write: hide the box, forget its edge. Deriving it here,
+ * rather than asking authors to hide edges in step with boxes, means every
+ * consumer of the resolver agrees, and the edge returns to its own state the
+ * moment its ends are both on stage.
+ */
+function hideOrphanEdges(
+  doc: AnimDocument,
+  states: Map<string, ResolvedPartState>
+): void {
+  for (const [id, part] of Object.entries(doc.parts)) {
+    if (part.type !== "edge") continue;
+    const current = states.get(id);
+    if (!current || current.state === "hidden") continue;
+    const endHidden = [part.from, part.to].some(
+      (end) => states.get(end)?.state === "hidden"
+    );
+    if (endHidden) states.set(id, { ...current, state: "hidden" });
+  }
 }
 
 /** Resolve every part's state at a wall-clock offset into the animation. */

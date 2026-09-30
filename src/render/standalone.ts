@@ -25,6 +25,13 @@
 
 import type { AnimDocument } from "../core/types";
 import { resolveAtStep, startTimeOf, totalDuration } from "../core/timeline";
+import {
+  cameraAtStep,
+  readingOrder,
+  STAGGER_BUDGET_MS,
+  STAGGER_MS,
+  usesFocus,
+} from "../core/camera";
 import { renderScene } from "./scene";
 import type { HtmlAssets } from "../core/htmlParts";
 import { buildStageCss, resolveStageTheme, type ThemeTokens } from "./stageCss";
@@ -35,8 +42,15 @@ type StateDelta = Record<string, [string, string]>;
 interface TimelineEntry {
   /** Milliseconds from the start of the animation. */
   t: number;
-  /** Attributes to write when the playhead reaches `t`. */
+  /**
+   * Attributes to write when the playhead reaches `t`, keyed in reading order.
+   * The player staggers a step's changes in the order it finds them here.
+   */
   s: StateDelta;
+  /** The step's caption, when it has one. */
+  cap?: string;
+  /** Camera as [scale, x, y]. Present on every entry once any step has focus. */
+  c?: [number, number, number];
 }
 
 /**
@@ -51,12 +65,25 @@ interface TimelineEntry {
 export function buildTimeline(doc: AnimDocument): TimelineEntry[] {
   const entries: TimelineEntry[] = [];
   let previous: Map<string, { state: string; tone: string }> | null = null;
+  const moves = usesFocus(doc);
+
+  // Reading order, with each html part's regions straight after it.
+  const order: string[] = [];
+  for (const id of readingOrder(doc)) {
+    order.push(id);
+    const part = doc.parts[id];
+    if (part.type === "html" && part.subParts) {
+      for (const subId of Object.keys(part.subParts)) order.push(`${id}/${subId}`);
+    }
+  }
 
   for (let index = 0; index < doc.steps.length; index += 1) {
     const resolved = resolveAtStep(doc, index);
     const delta: StateDelta = {};
 
-    for (const [partId, next] of resolved) {
+    for (const partId of order) {
+      const next = resolved.get(partId);
+      if (!next) continue;
       const before = previous?.get(partId);
       if (before && before.state === next.state && before.tone === next.tone) {
         continue;
@@ -64,7 +91,14 @@ export function buildTimeline(doc: AnimDocument): TimelineEntry[] {
       delta[partId] = [next.state, next.tone];
     }
 
-    entries.push({ t: startTimeOf(doc, index), s: delta });
+    const caption = doc.steps[index].caption?.trim();
+    const camera = cameraAtStep(doc, index);
+    entries.push({
+      t: startTimeOf(doc, index),
+      s: delta,
+      ...(caption ? { cap: caption } : {}),
+      ...(moves ? { c: [camera.scale, camera.x, camera.y] } : {}),
+    });
     previous = new Map(
       [...resolved].map(([id, value]) => [
         id,
@@ -104,18 +138,43 @@ const PLAYER = `
 (function () {
   var stage = document.querySelector('[data-scene-stage]');
   if (!stage || !TIMELINE.length) return;
+  var camera = stage.querySelector('.scene-camera');
+  var caption = document.querySelector('[data-scene-caption]');
+  var progress = document.querySelector('[data-scene-progress]');
 
-  function apply(entry) {
-    for (var id in entry.s) {
+  // With stagger, the parts a step changes start a beat apart, in the order
+  // the timeline lists them. Without it, as on the first frame and on the wrap
+  // back to the start, they all move together.
+  function apply(entry, stagger) {
+    var ids = Object.keys(entry.s);
+    var gap = stagger && ids.length > 1 ? Math.min(STAGGER, BUDGET / (ids.length - 1)) : 0;
+    for (var i = 0; i < ids.length; i += 1) {
+      var id = ids[i];
       var el = stage.querySelector('[data-part="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]');
       if (!el) continue;
+      el.style.setProperty('--scene-delay', Math.round(i * gap) + 'ms');
       el.setAttribute('data-state', entry.s[id][0]);
       el.setAttribute('data-tone', entry.s[id][1]);
     }
   }
 
-  function applyThrough(from, to) {
-    for (var i = from; i <= to; i += 1) apply(TIMELINE[i]);
+  function applyThrough(from, to, stagger) {
+    for (var i = from; i <= to; i += 1) apply(TIMELINE[i], stagger && from === to);
+  }
+
+  // Caption and camera belong to the step being shown, not to the steps passed
+  // on the way there, so they are set once from the destination.
+  function show(index) {
+    var entry = TIMELINE[index];
+    if (camera && entry.c) {
+      camera.style.transform = 'translate(' + entry.c[1] + 'px, ' + entry.c[2] + 'px) scale(' + entry.c[0] + ')';
+    }
+    if (caption) {
+      caption.textContent = entry.cap || '';
+      caption.classList.remove('scene-caption-in');
+      void caption.offsetWidth;
+      caption.classList.add('scene-caption-in');
+    }
   }
 
   function indexAt(t) {
@@ -138,9 +197,12 @@ const PLAYER = `
         // Going backwards means the loop wrapped; entry 0 is complete, so
         // replaying from there restores every part rather than only the ones
         // this step happens to mention.
-        applyThrough(index < last ? 0 : last + 1, index);
+        if (index < last) applyThrough(0, index, false);
+        else applyThrough(last + 1, index, true);
         last = index;
+        show(index);
       }
+      if (progress) progress.style.transform = 'scaleX(' + (TOTAL > 0 ? t / TOTAL : 0) + ')';
     }
     requestAnimationFrame(frame);
   }
@@ -166,13 +228,15 @@ const PLAYER = `
         origin = null;
         last = 0;
         paused = false;
-        applyThrough(0, 0);
+        applyThrough(0, 0, false);
+        show(0);
       }
     };
   }
 
-  applyThrough(0, 0);
+  applyThrough(0, 0, false);
   last = 0;
+  show(0);
   requestAnimationFrame(frame);
 })();
 `;
@@ -187,7 +251,48 @@ const PLAYER = `
  */
 const PAGE_CSS = `
 html[data-scene-paused="true"] .scene-edge-packet { animation-play-state: paused; }
-body { cursor: pointer; }
+body { cursor: pointer; display: flex; flex-direction: column; }
+[data-scene-stage] { flex: 1 1 auto; min-height: 0; }
+
+/*
+ * The narration. A scene's captions are its script; without them the export is
+ * boxes changing colour. It sits under the stage rather than over it, so a
+ * camera move never slides a part beneath the words.
+ */
+.scene-caption-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 84px;
+  padding: 14px 32px 18px;
+  border-top: 1px solid var(--scene-border);
+}
+.scene-caption-text {
+  max-width: 920px;
+  color: var(--scene-text);
+  font: 500 18px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  text-align: center;
+  text-wrap: balance;
+}
+.scene-caption-in { animation: scene-caption-in 360ms cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes scene-caption-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* How far through the loop the viewer is. */
+.scene-progress { flex: none; height: 3px; background: var(--scene-border); }
+.scene-progress-fill {
+  height: 100%;
+  background: var(--scene-tone-accent);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene-caption-in { animation: none; }
+}
 `;
 
 export interface StandaloneOptions {
@@ -242,10 +347,17 @@ export function buildStandaloneDocument(
   )}${PAGE_CSS}</style>
 </head>
 <body>
-<div data-scene-stage style="width:100%;height:100%">${renderScene(doc, options.assets)}</div>
+<div data-scene-stage>${renderScene(doc, options.assets)}</div>${
+    timeline.some((entry) => entry.cap)
+      ? `\n<div class="scene-caption-bar"><p class="scene-caption-text" data-scene-caption aria-live="polite"></p></div>`
+      : ""
+  }
+<div class="scene-progress"><div class="scene-progress-fill" data-scene-progress></div></div>
 <script>
 var TIMELINE = ${embedJson(timeline)};
 var TOTAL = ${total};
+var STAGGER = ${STAGGER_MS};
+var BUDGET = ${STAGGER_BUDGET_MS};
 var CAPTURE_HOOKS = ${options.captureHooks ? "true" : "false"};
 ${PLAYER}
 </script>

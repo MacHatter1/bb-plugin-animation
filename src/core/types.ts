@@ -98,6 +98,12 @@ export interface LabelPart extends PartBase {
   align?: 'start' | 'middle' | 'end';
   /** Rendered in the small tracked-out caps style used for scene captions. */
   caps?: boolean;
+  /**
+   * `"title"` draws the label as the scene's heading: large, bold and
+   * proportional. A named size rather than a number, so every scene's heading
+   * is the same size and an author cannot shrink the rest to fit.
+   */
+  size?: 'title';
 }
 
 export interface ShapePart extends PartBase {
@@ -228,6 +234,15 @@ export interface Step {
   /** Milliseconds this step holds before the next one begins. */
   duration: number;
   caption?: string;
+  /**
+   * Part ids the stage zooms to for this step. Absent means the whole stage.
+   *
+   * Unlike states, focus is not cumulative: it applies to this step only, so a
+   * step that forgets it widens back out rather than staying zoomed forever.
+   * Kept in the form the author wrote, a string or a list, so a save does not
+   * rewrite it.
+   */
+  focus?: string | string[];
   /** Part id to the state that becomes true when this step starts. */
   set?: Record<string, PartAssignment>;
 }

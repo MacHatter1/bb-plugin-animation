@@ -480,3 +480,81 @@ describe("chat embed hints", () => {
   });
 });
 
+describe("design notes from validate", () => {
+  const RUSHED = JSON.stringify({
+    parts: { n: { type: "node", x: 60, y: 190, w: 220, h: 100, rows: [{ key: "a" }, { key: "b" }] } },
+    steps: [{ id: "one", duration: 900, caption: "This caption has far too many words for one second." }],
+  });
+
+  it("reports notes with their fixes over the CLI, and still exits 0", async () => {
+    const { behavior } = await loadPlugin({ "/work/rushed.scene.json": RUSHED });
+    const ctx = { cwd: "/work", threadId: "thr_1" };
+
+    const text = await behavior.runCli(["validate", "rushed.scene.json"], ctx);
+    expect(text.exitCode).toBe(0);
+    expect(text.stdout).toContain("design notes (2). Apply each fix");
+    expect(text.stdout).toContain('[rows-clipped] parts.n.h: Node "n" is 100 high');
+    expect(text.stdout).toContain('"one": 3000');
+
+    const json = await behavior.runCli(["validate", "rushed.scene.json", "--json"], ctx);
+    const payload = JSON.parse(json.stdout) as { ok: boolean; advice: Array<{ rule: string }> };
+    expect(payload.ok).toBe(true);
+    expect(payload.advice.map((note) => note.rule)).toEqual(["rows-clipped", "caption-rushed"]);
+  });
+
+  it("tells the agent when there is nothing left to fix", async () => {
+    const { behavior } = await loadPlugin({ "/work/flow.scene.json": DEFAULT_ANIMATION_JSON });
+    const clean = toolText(
+      await behavior.callAgentTool(
+        "animation_validate",
+        { filePath: "flow.scene.json" },
+        { threadId: "thr_1" },
+      ),
+    );
+    expect(clean).toContain("design notes: none");
+
+    const { behavior: flawed } = await loadPlugin({ "/work/rushed.scene.json": RUSHED });
+    const notes = toolText(
+      await flawed.callAgentTool(
+        "animation_validate",
+        { filePath: "rushed.scene.json" },
+        { threadId: "thr_1" },
+      ),
+    );
+    expect(notes).toContain("design notes (2)");
+    expect(notes).toContain('Set "h": 128.');
+  });
+
+  it("compares the length with the one asked for", async () => {
+    const { behavior } = await loadPlugin({ "/work/flow.scene.json": DEFAULT_ANIMATION_JSON });
+    const ctx = { cwd: "/work", threadId: "thr_1" };
+
+    const cli = await behavior.runCli(["validate", "flow.scene.json", "--seconds", "30"], ctx);
+    expect(cli.exitCode).toBe(0);
+    expect(cli.stdout).toContain("[length] steps: The scene runs 2.7s but 30s was asked for.");
+    expect((await behavior.runCli(["validate", "flow.scene.json"], ctx)).stdout).toContain(
+      "design notes: none",
+    );
+
+    const tool = toolText(
+      await behavior.callAgentTool(
+        "animation_validate",
+        { filePath: "flow.scene.json", targetSeconds: 30 },
+        { threadId: "thr_1" },
+      ),
+    );
+    expect(tool).toContain("durationMs=2700 (2.7 seconds)");
+    expect(tool).toContain("[length]");
+  });
+
+  it("gives no design notes for a file with parse errors", async () => {
+    const { behavior } = await loadPlugin({ "/work/bad.scene.json": "{" });
+    const result = await behavior.runCli(["validate", "bad.scene.json", "--json"], {
+      cwd: "/work",
+      threadId: "thr_1",
+    });
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stderr).advice).toEqual([]);
+  });
+});
+

@@ -2,6 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { rpcContract, type FileSource } from "./contract";
 import { parseDocument } from "./src/core/parse";
+import { lintDocument, type Advice } from "./src/core/lint";
 import { htmlFileRefs } from "./src/core/htmlParts";
 import { totalDuration } from "./src/core/timeline";
 import {
@@ -210,6 +211,19 @@ function defaultExportDestination(resolved: ResolvedFile): ResolvedFile {
   };
 }
 
+/**
+ * Design notes as lines of text. The heading tells an agent what to do with
+ * them, because a list of notes with no instruction tends to be reported to
+ * the user rather than acted on.
+ */
+function adviceLines(advice: Advice[]): string[] {
+  if (advice.length === 0) return ["design notes: none"];
+  return [
+    `design notes (${advice.length}). Apply each fix, then validate again until there are none:`,
+    ...advice.map((note) => `  [${note.rule}] ${note.path}: ${note.message}`),
+  ];
+}
+
 export default async function plugin(bb: BbPluginApi) {
   bb.log.info("loaded");
 
@@ -324,7 +338,7 @@ export default async function plugin(bb: BbPluginApi) {
   const usage = [
     "Usage:",
     "  bb animation new <path> [--json]",
-    "  bb animation validate <path> [--json]",
+    "  bb animation validate <path> [--seconds <n>] [--json]",
     "  bb animation export <path> [--out <html-path>] [--json]",
   ].join("\n");
 
@@ -340,7 +354,7 @@ export default async function plugin(bb: BbPluginApi) {
       {
         name: "validate",
         summary: "Parse an animation and report problems",
-        usage: "bb animation validate <path> [--json]",
+        usage: "bb animation validate <path> [--seconds <n>] [--json]",
       },
       {
         name: "export",
@@ -352,7 +366,9 @@ export default async function plugin(bb: BbPluginApi) {
       const json = jsonFlag(argv);
       const raw = withoutJson(argv);
       const outOpt = takeOption(raw, "--out");
-      const [command, ...args] = outOpt.rest;
+      const secondsOpt = takeOption(outOpt.rest, "--seconds");
+      const targetSeconds = Number(secondsOpt.value);
+      const [command, ...args] = secondsOpt.rest;
       const reply = (value: unknown, text: string) => ({
         exitCode: 0,
         stdout: json ? `${JSON.stringify(value, null, 2)}\n` : `${text}\n`,
@@ -395,10 +411,24 @@ export default async function plugin(bb: BbPluginApi) {
             const resolved = await resolveInvokingHostPath(bb, input, ctx);
             const file = await readHostText(bb, resolved);
             const parsed = parseDocument(file.content);
+            const valid = parsed.problems.every(
+              (problem) => problem.level !== "error",
+            );
+            // A document with errors is only approximated, so notes about how
+            // it looks would be notes about the approximation.
+            const advice = valid
+              ? lintDocument(parsed.doc, {
+                  targetSeconds:
+                    Number.isFinite(targetSeconds) && targetSeconds > 0
+                      ? targetSeconds
+                      : undefined,
+                })
+              : [];
             const payload = {
-              ok: parsed.problems.every((problem) => problem.level !== "error"),
+              ok: valid,
               path: resolved.absolutePath,
               problems: parsed.problems,
+              advice,
               steps: parsed.doc.steps.length,
               parts: Object.keys(parsed.doc.parts).length,
               durationMs: totalDuration(parsed.doc),
@@ -416,16 +446,20 @@ export default async function plugin(bb: BbPluginApi) {
                 payload,
               );
             }
-            const lines =
-              parsed.problems.length === 0
-                ? `${resolved.absolutePath}: ok (${payload.steps} steps, ${payload.parts} parts)`
+            const lines = [
+              ...(parsed.problems.length === 0
+                ? [
+                    `${resolved.absolutePath}: ok (${payload.steps} steps, ${payload.parts} parts)`,
+                  ]
                 : [
                     `${resolved.absolutePath}: ok with warnings`,
                     ...parsed.problems.map(
                       (problem) =>
                         `  ${problem.level} ${problem.path}: ${problem.message}`,
                     ),
-                  ].join("\n");
+                  ]),
+              ...adviceLines(advice),
+            ].join("\n");
             return reply(payload, lines);
           }
           case "export": {
@@ -548,7 +582,7 @@ export default async function plugin(bb: BbPluginApi) {
   bb.agents.registerTool({
     name: "animation_validate",
     description:
-      "Parse a .scene.json animation and return errors, warnings, step count, and duration. Use before export or after editing.",
+      "Check a .scene.json animation. Returns errors, warnings, and design notes that each name the exact fix: clipped rows, overlapping boxes, captions too fast to read, nothing revealed over time. Run it after every edit and apply the notes until there are none.",
     instructions:
       'To play a scene inline in a reply, put ::scene{file="docs/flow.scene.json"} on a line of its own, using the workspace-relative path. Separate attributes with a space, never a comma: ::scene{file="docs/flow.scene.json" height=480}. animation_validate returns the exact line for a given file.',
     presentation: {
@@ -563,9 +597,17 @@ export default async function plugin(bb: BbPluginApi) {
           .string()
           .min(1)
           .describe("Workspace-relative or absolute path to the .scene.json file."),
+        targetSeconds: z
+          .number()
+          .positive()
+          .max(600)
+          .optional()
+          .describe(
+            "The length the user asked for, in seconds. Pass it whenever they named one, and a note says if the scene is too short or too long. Omit it otherwise.",
+          ),
       })
       .strict(),
-    async execute({ filePath }, { threadId }) {
+    async execute({ filePath, targetSeconds }, { threadId }) {
       try {
         const resolved = await toolSource(threadId, filePath);
         const file = await readHostText(bb, resolved);
@@ -578,7 +620,7 @@ export default async function plugin(bb: BbPluginApi) {
         );
         const lines = [
           `${resolved.absolutePath}: ${errors.length === 0 ? "ok" : "errors"}`,
-          `parts=${Object.keys(parsed.doc.parts).length} steps=${parsed.doc.steps.length} durationMs=${totalDuration(parsed.doc)}`,
+          `parts=${Object.keys(parsed.doc.parts).length} steps=${parsed.doc.steps.length} durationMs=${totalDuration(parsed.doc)} (${(totalDuration(parsed.doc) / 1000).toFixed(1)} seconds)`,
           ...errors.map(
             (problem) =>
               `error ${problem.path}: ${problem.message}`,
@@ -588,7 +630,10 @@ export default async function plugin(bb: BbPluginApi) {
               `warning ${problem.path}: ${problem.message}`,
           ),
           ...(errors.length === 0
-            ? await embedHint(threadId, resolved.absolutePath)
+            ? [
+                ...adviceLines(lintDocument(parsed.doc, { targetSeconds })),
+                ...(await embedHint(threadId, resolved.absolutePath)),
+              ]
             : []),
         ];
         return {

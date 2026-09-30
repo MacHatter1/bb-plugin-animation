@@ -43,7 +43,18 @@ const PART_ORDER: Record<Part["type"], readonly string[]> = {
     "rows",
   ],
   edge: ["type", "label", "tone", "state", "from", "to", "text", "packets"],
-  label: ["type", "label", "tone", "state", "x", "y", "text", "align", "caps"],
+  label: [
+    "type",
+    "label",
+    "tone",
+    "state",
+    "x",
+    "y",
+    "text",
+    "align",
+    "caps",
+    "size",
+  ],
   shape: [
     "type",
     "label",
@@ -75,7 +86,7 @@ const PART_ORDER: Record<Part["type"], readonly string[]> = {
   ],
 };
 
-const STEP_ORDER = ["id", "duration", "caption", "set"] as const;
+const STEP_ORDER = ["id", "duration", "caption", "focus", "set"] as const;
 const ASSIGNMENT_ORDER = ["state", "tone"] as const;
 const ROOT_ORDER = ["version", "stage", "parts", "steps"] as const;
 
@@ -211,6 +222,7 @@ function serializeStep(
     id: step.id,
     duration: step.duration,
     ...(step.caption !== undefined ? { caption: step.caption } : {}),
+    ...(step.focus !== undefined ? { focus: step.focus } : {}),
     ...(normalizedSet && Object.keys(normalizedSet).length > 0
       ? { set: normalizedSet }
       : {}),

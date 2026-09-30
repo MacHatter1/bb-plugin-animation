@@ -49,6 +49,10 @@ export const FALLBACK_TOKENS: ThemeTokens = {
 
 /** Duration of the state-to-state transition, in milliseconds. */
 export const TRANSITION_MS = 320;
+/** How long a part takes to rise in or drop out when it is shown or hidden. */
+export const ENTER_MS = 460;
+/** How long the camera takes to move to a step's focus. */
+export const CAMERA_MS = 720;
 
 /**
  * Keep document/theme values inside a CSS declaration and the surrounding
@@ -152,6 +156,9 @@ export function buildStageCss(
   --scene-mono: ui-monospace, 'SF Mono', Monaco, 'Courier New', monospace;
   --scene-duration: ${TRANSITION_MS}ms;
   --scene-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --scene-enter: ${ENTER_MS}ms;
+  /* Decelerating: a part arrives quickly and settles, rather than easing in. */
+  --scene-enter-ease: cubic-bezier(0.16, 1, 0.3, 1);
 
   --anim-bg: var(--scene-bg);
   --anim-surface: var(--scene-surface);
@@ -253,9 +260,13 @@ html, body {
   fill: var(--scene-surface);
   stroke: var(--scene-border);
   stroke-width: 1.3px;
+  /* A zero shadow rather than none, so the active glow has something to
+     interpolate from. */
+  filter: drop-shadow(0 0 0 transparent);
   transition: fill var(--scene-duration) var(--scene-ease),
               stroke var(--scene-duration) var(--scene-ease),
-              stroke-width var(--scene-duration) var(--scene-ease);
+              stroke-width var(--scene-duration) var(--scene-ease),
+              filter var(--scene-enter) var(--scene-ease);
 }
 .scene-node-header { fill: var(--scene-surface-raised); }
 .scene-node-rule { stroke: var(--scene-border); stroke-width: 1.2px; }
@@ -297,7 +308,13 @@ html, body {
   stroke: var(--scene-tone);
   stroke-width: 1.8px;
 }
+.scene-node[data-state="active"] .scene-node-body {
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--scene-tone) 42%, transparent));
+}
 .scene-node[data-state="active"] .scene-node-dot { opacity: 1; }
+/* The lit node is the one being read, so its rows come up a level. */
+.scene-node[data-state="active"] .scene-row-key { fill: var(--scene-text); }
+.scene-node[data-state="active"] .scene-row-value { fill: var(--scene-text-muted); }
 .scene-node[data-state="active"] .scene-row-box:first-of-type {
   fill: var(--scene-tone-fill);
   stroke: var(--scene-tone);
@@ -313,7 +330,10 @@ html, body {
   stroke-dasharray: 5 4;
 }
 .scene-node[data-state="hidden"] { opacity: 0; }
-.scene-node { transition: opacity var(--scene-duration) var(--scene-ease); }
+.scene-node {
+  transition: opacity var(--scene-enter) var(--scene-enter-ease),
+              translate var(--scene-enter) var(--scene-enter-ease);
+}
 
 /* ---- edges -------------------------------------------------------------- */
 .scene-edge-line {
@@ -433,11 +453,20 @@ html, body {
   font-family: var(--scene-mono);
   font-size: 12px;
   transition: fill var(--scene-duration) var(--scene-ease),
-              opacity var(--scene-duration) var(--scene-ease);
+              opacity var(--scene-enter) var(--scene-enter-ease),
+              translate var(--scene-enter) var(--scene-enter-ease);
 }
 .scene-label-caps {
   fill: var(--scene-text-faint);
   letter-spacing: 1.4px;
+}
+/* The scene's heading. Proportional, like html parts, because it is prose. */
+.scene-label-title {
+  fill: var(--scene-text);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.2px;
 }
 .scene-label[data-state="active"] { fill: var(--scene-tone); }
 .scene-label[data-state="hidden"] { opacity: 0; }
@@ -459,7 +488,10 @@ html, body {
   fill: color-mix(in srgb, var(--scene-tone) 65%, transparent);
 }
 .scene-shape[data-state="hidden"] { opacity: 0; }
-.scene-shape { transition: opacity var(--scene-duration) var(--scene-ease); }
+.scene-shape {
+  transition: opacity var(--scene-enter) var(--scene-enter-ease),
+              translate var(--scene-enter) var(--scene-enter-ease);
+}
 
 /* ---- html parts --------------------------------------------------------- */
 /*
@@ -486,7 +518,10 @@ html, body {
 
 .scene-html-body a { color: var(--scene-tone); }
 
-.scene-html { transition: opacity var(--scene-duration) var(--scene-ease); }
+.scene-html {
+  transition: opacity var(--scene-enter) var(--scene-enter-ease),
+              translate var(--scene-enter) var(--scene-enter-ease);
+}
 .scene-html[data-state="hidden"] { opacity: 0; }
 /*
  * The waiting and offline states get a default treatment so an html part is not
@@ -495,6 +530,40 @@ html, body {
  */
 .scene-html[data-state="waiting"] .scene-html-body { opacity: 0.75; }
 .scene-html[data-state="offline"] .scene-html-body { opacity: 0.4; }
+
+/* ---- entrances ---------------------------------------------------------- */
+/*
+ * A hidden part waits a little below where it belongs, so showing it is a rise
+ * into place rather than a bare fade, and hiding it is the reverse. This uses
+ * the \`translate\` property, not \`transform\`: nodes, shapes and html parts are
+ * positioned by a transform attribute, which a CSS transform would replace and
+ * a translate composes with. Edges only fade. A line that slid while its two
+ * boxes stood still would read as a fault.
+ */
+.scene-node[data-state="hidden"],
+.scene-shape[data-state="hidden"],
+.scene-html[data-state="hidden"] { translate: 0 14px; }
+.scene-label[data-state="hidden"] { translate: 0 7px; }
+
+/*
+ * Parts changed by one step start a beat apart, in reading order. The stage
+ * sets --scene-delay on each as it applies the step. It is !important because
+ * every \`transition\` shorthand above resets the delay to zero.
+ */
+.scene-part, .scene-part * {
+  transition-delay: var(--scene-delay, 0ms) !important;
+}
+
+/* ---- camera ------------------------------------------------------------- */
+/*
+ * One group holds the whole scene. A step's focus sets its transform, and the
+ * transition is what turns two framings into a camera move.
+ */
+.scene-camera {
+  transform-box: view-box;
+  transform-origin: 0 0;
+  transition: transform ${CAMERA_MS}ms var(--scene-ease);
+}
 
 /* ---- selection ---------------------------------------------------------- */
 .scene-part.scene-selected .scene-node-body,
@@ -545,7 +614,11 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   .scene-part, .scene-part * {
     transition-duration: 1ms !important;
+    transition-delay: 0ms !important;
   }
+  /* The framing still changes, so the step still makes sense; it just cuts. */
+  .scene-camera { transition-duration: 1ms !important; }
+  .scene-part[data-state="hidden"] { translate: none; }
   /*
    * Packets are the one continuously-moving thing here, so reduced motion has
    * to stop them outright rather than just shorten a transition. The edge still
