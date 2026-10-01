@@ -6,6 +6,8 @@ All notable changes to Animation are documented here. The format follows
 
 ## Unreleased
 
+## 0.3.0 - 2026-10-01
+
 ### Added
 
 - Looks: `stage.look` sets a scene's palette, type, corners, backdrop and
@@ -18,7 +20,7 @@ All notable changes to Animation are documented here. The format follows
 - Layouts for a hub and a ring in the skill, alongside the row and two rows.
 - A README hero capture of the Animation editor, with playback controls and
   the step strip, using the shipped retry sample.
-- Design notes for style: a scene with no look is assigned one from its title,
+- Design notes for style: a scene with no look gets one suggested from its title,
   boxes with no icons get one suggested each, people are suggested as actors,
   and a row of boxes whose edges form a hub or a loop gets the positions for
   that shape.
