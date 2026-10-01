@@ -18,11 +18,14 @@ Play it in BB, embed it in chat, or export one HTML page to share.
 
 <br>
 
-<img src="screenshots/animation/retry-fail.jpg" alt="An exported scene in the blueprint look, zoomed to a worker and a store: the write between them fails in red, with the caption 'The write fails, so the job is never acknowledged' under the stage" width="900">
+<img src="screenshots/animation/retry-editor.jpg" alt="BB's Animation editor showing a failed write between a worker and a store in the blueprint look, with narration, playback controls and the step strip below the stage" width="900">
 
 </div>
 
 <br>
+
+> [!NOTE]
+> The screenshots are real BB captures populated with fictional demo data.
 
 ## The problem
 
@@ -60,9 +63,9 @@ boundary to retime it. <kbd>Space</kbd> plays, <kbd>⌘S</kbd> saves, and
 
 ### 🎥 Motion and narration
 
-Parts rise in when revealed, changes sweep left to right, and `focus` zooms
-the stage to the boxes a step is about. Each step's caption shows under the
-stage as narration. None of it is scripted.
+Parts arrive in the selected look's style, changes start in reading order,
+and `focus` zooms the stage to the boxes a step is about. Each step's caption
+shows under the stage as narration. None of it is scripted.
 
 </td>
 </tr>
@@ -101,7 +104,7 @@ the CLI, or an agent tool.
 ### 📄 Plain JSON, agent-ready
 
 Parts plus an ordered list of steps, saved in a fixed key order so diffs stay
-small. The bundled skill gives agents an eight-step recipe, a layout grid and
+small. The bundled skill gives agents a nine-step recipe, layout grids and
 a worked example to copy.
 
 </td>
@@ -167,29 +170,37 @@ flowchart LR
   X --> H["looping .html"]
 ```
 
-- **States, not keyframes.** A step assigns a `state` and a `tone` to parts,
-  and a 320 ms CSS transition interpolates. States are cumulative, so a step
-  only lists what changes.
-- **Motion comes from the renderer.** Showing a hidden part makes it rise into
-  place, parts changed by one step start a beat apart in reading order, and a
-  step's `focus` moves the camera. The file says what is true; it never says
-  how to move.
+- **States drive motion.** Each step changes a part's `state` or `tone`, and
+  CSS transitions interpolate. States are cumulative. Revealed parts arrive
+  in the selected look's style, changes start in reading order, and `focus`
+  moves the camera.
 - **Edges route themselves.** Neighbours get a straight line. An edge that
   skips a box arcs round it, and a request and its reply run in separate
   lanes.
-- **A look is a name, not a palette.** `stage.look` picks the colours, type,
-  corners, backdrop and arrival style together. The validator assigns one to
-  each scene from its title, so scenes made the same way do not look the same.
-- **One parser everywhere.** The editor, CLI, agent tools and export all use
-  the same parser. It repairs near-misses with a warning. Errors block saving
-  and export.
-- **Canonical saves.** The editor writes a fixed key order, so saving an
-  unchanged document gives identical bytes.
-- **Same render inside and outside BB.** Export uses the editor's renderer and
-  stage CSS, with the `stage.theme` palette or a fixed dark fallback.
-- **What it will not do.** It has no GIF or MP4 export, parts cannot travel
-  from one place to another, and text cannot change between steps. There are
-  no font sizes beyond one title style for the heading.
+- **Looks set the style.** `stage.look` picks the colours, type, corners,
+  backdrop and arrival style together. For an unstyled scene, design notes
+  suggest a look from its title. You apply the suggestion to the file;
+  validation never changes it. `stage.theme` can override individual colours.
+- **One parser and stable saves.** The editor, CLI, agent tools and export
+  share a parser. It repairs near-misses with a warning; errors block saving
+  and export. Saves use a fixed key order so unchanged content keeps the same
+  bytes.
+- **Same render inside and outside BB.** Export uses the editor's renderer,
+  stage CSS and selected look. Individual theme colours override the look;
+  scenes without a look use the default slate style.
+
+<details>
+<summary><b>Compatibility and limits</b></summary>
+
+Existing `.anim.json` files, `::animation` embeds and Nimbalyst `anim-*` /
+`--anim-*` tokens still work. New files use `.scene.json`, `::scene` and
+`--scene-*`.
+
+HTML is the shareable output; GIF and MP4 export are unavailable. Parts keep
+their positions and text between steps. The format offers named looks and a
+title style rather than individual font-size controls.
+
+</details>
 
 ## Safe by default
 
@@ -206,9 +217,9 @@ flowchart LR
   `htmlFile` must be relative and stay inside the workspace. Outside a
   workspace, the limit is the directory the CLI ran in, or the scene's own
   folder.
-- 🌐 **No network calls.** The plugin reads and writes files through BB and
-  nothing else. An exported page loads remote content only if your own markup
-  names an `https:` image.
+- 🌐 **No service connection required.** The plugin reads and writes files
+  through BB. Your own HTML parts can load remote `https:` images, including
+  images named in inline styles.
 - 📝 **Export only replaces its own output.** Exporting again overwrites an
   earlier Animation export. Any other file at the output path, including the
   scene itself, is left alone and the export stops with an error.
@@ -218,6 +229,7 @@ flowchart LR
 ```sh
 bb animation new docs/cache-read.scene.json         # create a starter scene
 bb animation validate docs/cache-read.scene.json    # problems, plus design notes with fixes
+bb animation validate docs/cache-read.scene.json --seconds 30
 bb animation export docs/cache-read.scene.json      # write docs/cache-read.html
 bb animation export docs/cache-read.scene.json --out site/cache.html --json
 ```
@@ -236,11 +248,13 @@ workspace when there is no current directory.
 
 </details>
 
-**Agent tools:** `animation_validate({ filePath })` and
+**Agent tools:** `animation_validate({ filePath, targetSeconds? })` and
 `animation_export_html({ filePath, outputPath? })`. The bundled
 [skill](skills/animation/SKILL.md) teaches agents the part types, states,
 geometry and canonical key order, and when a static diagram is the better
-choice.
+choice. When you ask for a length, agents pass it as `targetSeconds` (a
+positive number up to 600) and apply the validator's design notes before
+embedding the scene.
 
 ## Development
 
@@ -268,11 +282,18 @@ screenshots/     README images
 ```
 
 **Tests** are Vitest unit tests for the parser, serialiser and timeline, the
-scene renderer, the camera and every design note, the HTML sanitiser and the
-host path helpers. They also check that the shipped samples, the starter and
-the skill's worked example pass the validator with no notes. A fake plugin host
+scene renderer, looks, icons, actor geometry, edge routing, the camera and
+design notes, the HTML sanitiser and host path helpers. They also check that
+the shipped samples, the starter and the skill's worked example pass the
+validator with no notes. A fake plugin host
 also drives the CLI and agent tools end to end: create, validate, export,
 refusing parse errors, and `.anim.json` files.
+
+For README screenshots, open the shipped samples in BB and crop to the file
+preview pane. The hero shows the `fail` step in `samples/retry.scene.json`;
+the gallery shows the paper hub in `samples/lookup.scene.json` and the
+daylight row in `samples/demo.scene.json`. Keep all captures on fictional
+demo data.
 
 `PLUGIN_OVERVIEW.md` is the store listing. Keep it in step with
 `bb.description` in `package.json`.

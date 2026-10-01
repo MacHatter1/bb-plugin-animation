@@ -28,19 +28,19 @@ BB surfaces:
 Follow these nine steps in order. They produce a good animation without any design judgement, and the validator in step 9 catches what you cannot see.
 
 1. **Write the story as 6 to 10 captions.** One sentence each, 10 words or fewer (12 is the limit). Read together, they explain the thing to someone who has never seen it. Captions are shown under the stage as narration, so they are the script. **If the user asked for a length, write one caption per 2.5 seconds**: 12 captions for 30 seconds.
-2. **Leave `"look"` out of your first draft.** The look is the scene's whole character: palette, type, corners, backdrop. The validator assigns one to each scene in step 9, so that different scenes look different. Set exactly the one it names. Only choose a look yourself when the user asks for one by name, and never write colours.
+2. **Leave `"look"` out of your first draft.** The look is the scene's whole character: palette, type, corners, backdrop. In step 9, the validator suggests one from the scene's title; it does not edit the file. Set exactly the one it names. Only choose a look yourself when the user asks for one by name, and never write colours.
 3. **Pick 3 to 6 boxes.** One `node` per thing in the story. More than 6 means the story is two animations.
    - Give every box an `"icon"` from the list below.
    - A person or a device is an **actor**: add `"variant": "actor"`, which draws a circle with the icon and the name under it. An actor has no `rows` and no `subtitle`.
    - Give each other box one or two rows of **fixed facts**: a name, a limit, a setting. Never a status such as `pending`, `verified` or `done`: text cannot change between steps, so a status is wrong for most of the run. Show change with states, not with text.
 4. **Choose the layout from the shape of the story**, using the table below, and copy its coordinates. A chain is a row. One thing in the middle talking to several is a hub. A loop is a ring. Do not put everything in a row by habit.
-5. **Hide what arrives later.** Every box the first caption does not need gets `"state": "hidden"`. Reveal it with `"state": "idle"` or `"active"` in the step whose caption introduces it. Hidden parts rise into place when shown. Edges need no hiding: an edge appears in the step that first lights it, and stays afterwards as a trace of the conversation.
+5. **Hide what arrives later.** Every box the first caption does not need gets `"state": "hidden"`. Reveal it with `"state": "idle"` or `"active"` in the step whose caption introduces it. Hidden parts arrive in the selected look's style. Edges need no hiding: an edge appears in the step that first lights it, and stays afterwards as a trace of the conversation.
 6. **Write one step per caption.** Light the one or two parts the caption is about, and **set an edge `"flowing"` whenever something passes between two boxes**: the moving packets are what make it an animation. When an edge flows into a box, set that box `"active"` in the same step, so the arrival shows. Any two boxes can be joined, not only neighbours. Switch off what the previous step lit: set its edges back to `"idle"`. **Every step must change something the viewer can see**; a step that only changes the caption is dead air, so merge it into its neighbour. Take `duration` from the table below.
 7. **Add `focus`** to steps that are about one or two boxes: `"focus": ["queue", "worker"]`. The stage zooms to them. If the step lights an edge, name the boxes at both ends of it. Leave `focus` off the first step, any step that reveals parts, and the last step.
 8. **End calm.** In the last step every edge is `"idle"`, the box that holds the result stays `"active"`, and there is no `focus`.
 9. **Validate, fix, repeat.** Run `animation_validate` (or `bb animation validate <path>`). If the user asked for a length, pass it as `targetSeconds` (`--seconds` on the CLI). Apply every design note exactly as written, then validate again. **Never delete an edge or a box to clear a note**: that deletes part of the story. Stop when it says `design notes: none`. Then put the `::scene` line it gives you in your reply.
 
-**Looks.** One is assigned to your scene by the validator; set it as `"stage": { ..., "look": "paper" }`.
+**Looks.** The validator suggests one for an unstyled scene; apply it as `"stage": { ..., "look": "paper" }`.
 
 | Look | What it looks like |
 | --- | --- |
@@ -97,7 +97,7 @@ Times are **integer milliseconds**. Never frame indices, never floats.
 {
   "version": 1,
   "stage": { "width": 1200, "height": 640, "fps": 25 },
-  "parts": { "<id>": { "type": "node" | "edge" | "label" | "shape", ... } },
+  "parts": { "<id>": { "type": "node" | "edge" | "label" | "shape" | "html", ... } },
   "steps": [ { "id": "...", "duration": 800, "caption": "...", "set": { ... } } ]
 }
 ```
@@ -107,15 +107,15 @@ Times are **integer milliseconds**. Never frame indices, never floats.
 | Field | Notes |
 | --- | --- |
 | `width`, `height` | Clamped to 16..8192. The stage scales to fit the pane, so these set the aspect ratio and the coordinate system, not the pixel size. |
-| `look` | The scene's visual character, by name (see the looks table in the recipe). Sets the palette, type, corners, backdrop and how parts arrive. Use the one the validator assigns; do not write colours. |
+| `look` | The scene's visual character, by name (see the looks table in the recipe). Sets the palette, type, corners, backdrop and how parts arrive. Use the one the validator suggests; do not write colours. |
 | `fps` | Only affects frame snapping and the readout. Use 25 unless you have a reason. Whole-millisecond frame rates: 10, 20, 25, 50. |
-| `background` | Optional override. Omit it and the stage uses `stage.theme.bg`, or the fixed dark fallback palette when there is no theme -- usually what you want. |
+| `background` | Optional override. Omit it and the stage uses the selected look's background, with `stage.theme.bg` taking precedence. Without a look, it uses the default slate palette. |
 
 1200x640 is a good default. Landscape, room for a header row and a bottom rail.
 
 ### parts
 
-Part ids are the keys. All four types share `label`, `tone`, and `state` (their *baseline*, before any step runs).
+Part ids are the keys. All five types share `label`, `tone`, and `state` (their *baseline*, before any step runs).
 
 **`node`** -- the workhorse. A titled card with an optional subtitle and key/value rows.
 
@@ -198,7 +198,7 @@ Three things about `html` parts that will otherwise cost you a build:
 
 Keys naming a stage token (`bg`, `surface`, `surfaceRaised`, `border`, `borderStrong`, `text`, `textMuted`, `textFaint`, `accent`, `success`, `warning`, `error`, `purple`) override that token. Keys of the form `--some-name` are emitted as extra custom properties, which is how a project carries its own vocabulary into the stage. Anything else is dropped.
 
-Values, not a theme *name*: no renderer then needs a theme registry, and the extension stays neutral about whose product this is. The cost is that editing a theme in the app does not reach existing documents until they are restamped.
+`stage.look` supplies the base style; `stage.theme` stores colour overrides as values. Editing a product theme outside the scene does not update existing documents until their overrides are restamped.
 
 **Write markup against token names, not literal hex.** `var(--scene-border)` rather than `#383838` means switching palettes is a one-field edit with nothing to redraw. Reserve literal colours for things that genuinely are fixed -- macOS traffic lights.
 
@@ -271,7 +271,7 @@ This BB plugin does **not** ship the Nimbalyst `.tsx` compiler. Author `html` or
 
 `neutral` `accent` `data` `success` `warning` `error` `muted`
 
-They map to stage tokens (from `stage.theme`, or the fixed dark fallback): accent is blue, data purple, success green, warning amber, error red, neutral/muted a faint grey. **Assign them semantically and keep the meaning fixed for the whole animation** -- if amber means "under review" in step 4 it cannot mean "slow" in step 7.
+They map to the selected look's stage tokens, with `stage.theme` overriding individual colours. In the default slate look, accent is blue, data purple, success green, warning amber, error red, and neutral/muted a faint grey. Other looks use different palettes. **Assign tones semantically and keep the meaning fixed for the whole animation** -- if `warning` means "under review" in step 4 it cannot mean "slow" in step 7.
 
 ### states
 
@@ -325,12 +325,13 @@ Leave the gap wide enough for what the edge carries: ~40px for a bare edge with 
 The editor rewrites the file on save with a fixed key order. **Hand-write it in canonical order or your first save will reformat the whole file and bury the real edit in the diff.**
 
 - Root: `version`, `stage`, `parts`, `steps`
-- `stage`: `width`, `height`, `fps`, `look`, `background`
+- `stage`: `width`, `height`, `fps`, `look`, `background`, `theme`
 - `parts`: **sorted alphabetically by id**. Within a part: `type`, `label`, `tone`, `state`, then
   - node: `x`, `y`, `w`, `h`, `icon`, `variant`, `subtitle`, `rows`
   - edge: `from`, `to`, `text`, `packets`
   - label: `x`, `y`, `text`, `align`, `caps`, `size`
   - shape: `x`, `y`, `w`, `h`, `shape`, `text`
+  - html: `x`, `y`, `w`, `h`, `component`, `props`, `subParts`, `build`, `htmlFile`, `html`, `vars`
 - `steps`: **document order** -- it is the animation. Within a step: `id`, `duration`, `caption`, `focus`, `set`. `set` keys sorted alphabetically; each assignment `state` then `tone`.
 - Two-space indent, one trailing newline.
 
@@ -341,8 +342,8 @@ Unknown keys are preserved and written after the known ones in sorted order, so 
 Design around these; they are not bugs to work around.
 
 - **No text changes.** No part's `label`, `text`, `subtitle`, or `rows` can differ between steps. A counter that ticks `36 -> 24 -> 12` is impossible. Show quantity with shapes going `hidden`, and write static captions that stay true for the whole run (`"CLAIMED IN ORDER"`, not `"16 REMAINING"`).
-- **Parts do not travel.** `x`/`y` are fixed, so nothing moves from one place to another. The motion you get is built in, and you do not script it: a part rises into place when it stops being `hidden`, parts changed by the same step start a beat apart from left to right, a lit node glows, packets run along a flowing edge, and the camera glides to each step's `focus`.
-- **No font sizes**, apart from one heading: a label with `"size": "title"` is 24px. Other labels are 12px, node titles 13px, rows and subtitles 11px.
+- **Parts do not travel.** `x`/`y` are fixed. Motion is built in: a revealed part arrives in the look's style, changes start in reading order, active nodes use the look's highlighting, packets run along flowing edges, and the camera glides to each step's `focus`.
+- **No per-part font-size fields.** A label with `"size": "title"` gets the look's heading style. Looks set the type sizes for cards and labels; HTML parts can use inline styles.
 - **No z-index.** Alphabetical ids, as above.
 - **No per-step easing or delay.** Timings are fixed: 320ms for a colour change, 460ms for a part to arrive, 720ms for a camera move.
 
@@ -390,7 +391,7 @@ If the user gave you a style reference image, match its *vocabulary* -- caps mic
 
 ## Exporting
 
-`animation_export_html` (or `bb animation export <path>`) writes a `.scene.json` out as a self-contained HTML file that plays and loops on its own, with no external references. Point it at a path; it does not need the file open in an editor.
+`animation_export_html` (or `bb animation export <path>`) writes a `.scene.json` out as a self-contained HTML file that plays and loops on its own. The renderer, styles, playback script and local HTML partials are included; remote HTTPS images named in your markup remain remote. Point it at a path; it does not need the file open in an editor.
 
 ```
 animation_export_html { filePath: "docs/cache.scene.json" }
@@ -401,7 +402,7 @@ Pass `outputPath` to put it somewhere else; a relative path resolves the same wa
 
 **There is no GIF or MP4 export in this BB plugin.** If the destination cannot run HTML, say so and offer the standalone HTML anyway, or a screenshot of one step. Do not pretend a GIF tool exists.
 
-The editor preview and the HTML export use the palette in `stage.theme`, or a fixed dark fallback when the document names none. They agree by construction.
+The editor preview and the HTML export use `stage.look`, with `stage.theme` overriding individual colours. Without a look, they use the default slate style. They share the renderer and stage CSS.
 
 ### Showing it live inside BB
 

@@ -16,6 +16,8 @@ All notable changes to Animation are documented here. The format follows
 - Actors: `"variant": "actor"` draws a node as a circle holding its icon, for
   the people and devices in a story.
 - Layouts for a hub and a ring in the skill, alongside the row and two rows.
+- A README hero capture of the Animation editor, with playback controls and
+  the step strip, using the shipped retry sample.
 - Design notes for style: a scene with no look is assigned one from its title,
   boxes with no icons get one suggested each, people are suggested as actors,
   and a row of boxes whose edges form a hub or a loop gets the positions for
@@ -30,6 +32,11 @@ All notable changes to Animation are documented here. The format follows
   apart along their lines.
 - A vertical edge may carry text wider than its gap, since the text runs
   sideways.
+- Repository documentation follows the nine-step authoring recipe and
+  explains look suggestions, theme overrides, duration checks and format
+  compatibility.
+- README gallery screenshots are captured in BB's Animation editor using
+  fictional sample data.
 
 ### Fixed
 
