@@ -49,6 +49,8 @@ export interface EdgeRoute {
   through: string[];
   /** Everything the line covers, for framing it with the camera. */
   bounds: Rect;
+  /** The point a fraction `t` of the way along the line, from 0 to 1. */
+  at: (t: number) => Point;
 }
 
 /** Distance between the centre lines of two edges joining the same pair. */
@@ -58,12 +60,42 @@ const ARC_SAMPLES = 24;
 const STAGE_MARGIN = 6;
 
 /**
- * The box an edge attaches to. A label is a point: its edge meets the text's
- * anchor, not an estimated text box.
+ * The circle an actor is drawn as, in its box's own coordinates.
+ *
+ * It sits at the box's centre, not at the top, so an edge between an actor and
+ * a card in the same row runs level: both are joined centre to centre. The
+ * radius leaves room underneath for the name.
  */
-function anchorRect(part: Part | undefined): Rect | null {
+export function actorCircle(box: { w: number; h: number }): {
+  cx: number;
+  cy: number;
+  r: number;
+} {
+  const r = Math.max(14, Math.min(box.w, box.h - 56) / 2);
+  return { cx: box.w / 2, cy: box.h / 2, r };
+}
+
+/** A rectangle, or the circle inside it when that is what is drawn. */
+interface Anchor extends Rect {
+  circle?: { cx: number; cy: number; r: number };
+}
+
+/**
+ * What an edge attaches to: the thing that is actually drawn.
+ *
+ * A label is a point, so its edge meets the text's anchor rather than an
+ * estimated text box. An actor is its circle, not the wider box that also
+ * holds its name: a line that stopped at the box would end in empty space
+ * beside the circle.
+ */
+function anchorRect(part: Part | undefined): Anchor | null {
   if (!part || part.type === "edge") return null;
   if (part.type === "label") return { x: part.x, y: part.y, w: 0, h: 0 };
+  if (part.type === "node" && part.variant === "actor") {
+    const { cx, cy, r } = actorCircle(part);
+    const circle = { cx: part.x + cx, cy: part.y + cy, r };
+    return { x: circle.cx - r, y: circle.cy - r, w: r * 2, h: r * 2, circle };
+  }
   return { x: part.x, y: part.y, w: part.w, h: part.h };
 }
 
@@ -93,10 +125,25 @@ function contains(outer: Rect, inner: Rect): boolean {
  * Where the segment from `start`, a point inside `rect`, towards `toward`
  * leaves the rectangle. A point-sized rect returns the point itself.
  */
-function exitPoint(rect: Rect, start: Point, toward: Point): Point {
+function exitPoint(rect: Anchor, start: Point, toward: Point): Point {
   const dx = toward.x - start.x;
   const dy = toward.y - start.y;
   if ((dx === 0 && dy === 0) || rect.w === 0 || rect.h === 0) return start;
+  if (rect.circle) {
+    // Where the ray from `start` leaves the circle. `start` is inside it
+    // unless a lane has been pushed past its edge, in which case the square
+    // around it is the better answer.
+    const { cx, cy, r } = rect.circle;
+    const ox = start.x - cx;
+    const oy = start.y - cy;
+    const a = dx * dx + dy * dy;
+    const b = ox * dx + oy * dy;
+    const c = ox * ox + oy * oy - r * r;
+    if (c < 0) {
+      const t = (-b + Math.sqrt(b * b - a * c)) / a;
+      return { x: start.x + dx * t, y: start.y + dy * t };
+    }
+  }
   const tx =
     dx === 0
       ? Infinity
@@ -189,7 +236,13 @@ function obstaclesFor(
  * two parts share the line out evenly, in id order, so each gets its own lane
  * whichever way it points.
  */
-function laneOffset(doc: AnimDocument, id: string, from: string, to: string): number {
+function laneOffset(
+  doc: AnimDocument,
+  id: string,
+  from: string,
+  to: string,
+  room: number
+): number {
   const siblings = Object.keys(doc.parts)
     .filter((other) => {
       const part = doc.parts[other];
@@ -201,7 +254,10 @@ function laneOffset(doc: AnimDocument, id: string, from: string, to: string): nu
     })
     .sort();
   if (siblings.length < 2) return 0;
-  return (siblings.indexOf(id) - (siblings.length - 1) / 2) * LANE_GAP;
+  // Many edges between one pair close up, so the outer lanes still leave and
+  // arrive on the boxes' facing sides rather than off their corners.
+  const gap = Math.min(LANE_GAP, (room * 0.72) / (siblings.length - 1));
+  return (siblings.indexOf(id) - (siblings.length - 1) / 2) * gap;
 }
 
 function arc(
@@ -238,8 +294,68 @@ function arc(
   return { points: [a, c1, c2, b], samples };
 }
 
-/** The route for one edge, or null when it has nothing to join. */
+/** The plate an edge's text is drawn on: as wide as the text, one line high. */
+const LABEL_HEIGHT = 20;
+function labelWidth(text: string): number {
+  return Math.max(40, text.length * 7.6 + 16);
+}
+/** Where along its line a label goes when the middle is already taken. */
+const LABEL_FALLBACKS = [0.28, 0.72, 0.16, 0.84];
+
+/**
+ * The route for one edge, or null when it has nothing to join.
+ *
+ * A label sits at the middle of its line. It moves only when another label's
+ * plate would cover it there, as happens where two diagonals cross: then the
+ * later edge in id order slides its label along its own line until it is
+ * clear. Overlap is measured on the plates themselves, so two parallel lanes,
+ * whose labels sit one above the other without touching, both stay centred.
+ */
 export function routeEdge(doc: AnimDocument, id: string): EdgeRoute | null {
+  const route = baseRoute(doc, id);
+  const part = doc.parts[id];
+  if (!route || !part || part.type !== "edge" || !part.text) return route;
+
+  const taken: Array<{ at: Point; w: number }> = [];
+  for (const other of Object.keys(doc.parts).sort()) {
+    if (other >= id) break;
+    const otherPart = doc.parts[other];
+    if (otherPart.type !== "edge" || !otherPart.text) continue;
+    const otherRoute = baseRoute(doc, other);
+    if (otherRoute) {
+      taken.push({ at: otherRoute.label, w: labelWidth(otherPart.text) });
+    }
+  }
+  const width = labelWidth(part.text);
+  const clear = (point: Point) =>
+    taken.every(
+      (label) =>
+        Math.abs(label.at.x - point.x) >= (label.w + width) / 2 + 6 ||
+        Math.abs(label.at.y - point.y) >= LABEL_HEIGHT + 4
+    );
+  if (clear(route.label)) return route;
+
+  // A label that has to move must not land on a box, its own ends included.
+  const boxes = Object.values(doc.parts).flatMap((other) => {
+    const rect = anchorRect(other);
+    return rect && rect.w > 0 ? [rect] : [];
+  });
+  const offBoxes = (point: Point) =>
+    boxes.every(
+      (box) =>
+        point.x + width / 2 <= box.x ||
+        point.x - width / 2 >= box.x + box.w ||
+        point.y + LABEL_HEIGHT / 2 <= box.y ||
+        point.y - LABEL_HEIGHT / 2 >= box.y + box.h
+    );
+  for (const t of LABEL_FALLBACKS) {
+    const point = route.at(t);
+    if (clear(point) && offBoxes(point)) return { ...route, label: point };
+  }
+  return route;
+}
+
+function baseRoute(doc: AnimDocument, id: string): EdgeRoute | null {
   const part = doc.parts[id];
   if (!part || part.type !== "edge") return null;
   const from = anchorRect(doc.parts[part.from]);
@@ -256,7 +372,18 @@ export function routeEdge(doc: AnimDocument, id: string): EdgeRoute | null {
   const dx = (cb.x - ca.x) * flip;
   const dy = (cb.y - ca.y) * flip;
   const length = Math.hypot(dx, dy) || 1;
-  const offset = laneOffset(doc, id, part.from, part.to);
+  // How much of the facing sides the lanes may use: the smaller box's extent
+  // across the line between them.
+  const across = (rect: Rect) =>
+    (Math.abs(dy) * rect.w + Math.abs(dx) * rect.h) / length;
+  const room = Math.min(across(from) || Infinity, across(to) || Infinity);
+  const offset = laneOffset(
+    doc,
+    id,
+    part.from,
+    part.to,
+    Number.isFinite(room) ? room : LANE_GAP * 4
+  );
   const shift = { x: (-dy / length) * offset, y: (dx / length) * offset };
   const sa = { x: ca.x + shift.x, y: ca.y + shift.y };
   const sb = { x: cb.x + shift.x, y: cb.y + shift.y };
@@ -274,6 +401,7 @@ export function routeEdge(doc: AnimDocument, id: string): EdgeRoute | null {
       gap: Math.hypot(b.x - a.x, b.y - a.y),
       through: [],
       bounds: boundsOf([a, b]),
+      at: (t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }),
     };
   }
 
@@ -324,5 +452,6 @@ export function routeEdge(doc: AnimDocument, id: string): EdgeRoute | null {
     gap: Infinity,
     through: hit,
     bounds: boundsOf(curve.samples),
+    at: (t) => cubicAt(p0, p1, p2, p3, t),
   };
 }

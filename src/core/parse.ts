@@ -17,6 +17,8 @@
  * `extras` bag carries those keys back to `serialize.ts`.
  */
 
+import { ICON_NAMES } from "./icons";
+import { LOOK_IDS } from "./looks";
 import {
   DEFAULT_TONE,
   TONES,
@@ -309,7 +311,7 @@ function coerceTheme(
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-const STAGE_KEYS = ["width", "height", "fps", "background", "theme"];
+const STAGE_KEYS = ["width", "height", "fps", "look", "background", "theme"];
 
 function parseStage(
   raw: unknown,
@@ -346,6 +348,17 @@ function parseStage(
         : Math.round(clamp(height, MIN_STAGE, MAX_STAGE)),
     fps: fps === null ? fallback.fps : Math.round(clamp(fps, 1, 120)),
   };
+  const look = coerceString(raw.look);
+  if (look !== undefined && LOOK_IDS.includes(look)) {
+    stage.look = look;
+  } else if (raw.look !== undefined) {
+    problems.push({
+      level: "warning",
+      path: "stage.look",
+      message: `Unknown look ${JSON.stringify(raw.look)}; using the default. Use one of: ${LOOK_IDS.join(", ")}.`,
+    });
+    extras.stage.look = raw.look;
+  }
   const background = coerceString(raw.background);
   if (background) stage.background = background;
   const theme = coerceTheme(raw.theme, problems, extras);
@@ -673,12 +686,31 @@ function parsePart(
         "y",
         "w",
         "h",
+        "icon",
+        "variant",
         "subtitle",
         "rows",
       ]);
       preserveInvalidTone(extras.parts[id]);
       if (declared !== "node" && raw.type !== undefined)
         extras.parts[id].type = raw.type;
+      const icon = coerceString(raw.icon);
+      if (raw.icon !== undefined && !(icon && ICON_NAMES.includes(icon))) {
+        problems.push({
+          level: "warning",
+          path: `${path}.icon`,
+          message: `Unknown icon ${JSON.stringify(raw.icon)}; kept but not drawn. Use one of: ${ICON_NAMES.join(", ")}.`,
+        });
+        extras.parts[id].icon = raw.icon;
+      }
+      if (raw.variant !== undefined && raw.variant !== "actor") {
+        problems.push({
+          level: "warning",
+          path: `${path}.variant`,
+          message: 'The only node variant is "actor"; kept but not used.',
+        });
+        extras.parts[id].variant = raw.variant;
+      }
       const subtitle = coerceString(raw.subtitle);
       const rows: Array<{ key: string; value?: string }> = [];
       const rowExtras: Array<Record<string, unknown>> = [];
@@ -723,6 +755,8 @@ function parsePart(
         y: num("y", 0),
         w: dimension("w", 200),
         h: dimension("h", 120),
+        ...(icon && ICON_NAMES.includes(icon) ? { icon } : {}),
+        ...(raw.variant === "actor" ? { variant: "actor" as const } : {}),
         ...(subtitle !== undefined ? { subtitle } : {}),
         ...(rows.length > 0 ? { rows } : {}),
       };

@@ -6,6 +6,7 @@ Play technical diagrams as a sequence of beats, not a keyframe dope sheet.
 - Scrub the playhead, drag a step boundary to retime it, and click a part to quote it into chat.
 - Motion without scripting: parts rise in when revealed, changes sweep left to right, and a step's `focus` zooms the stage to the boxes it is about.
 - Captions shown as narration in the editor, the chat embed and the export.
+- Ten looks, from `blueprint` to `paper` to `neon`, plus icons, actors and layouts for a row, a hub or a ring, so scenes do not all look alike.
 - Design notes from `animation_validate`, each with the exact fix, so an agent that cannot see the scene can still get it right.
 - A starter file from the thread panel, the command palette, or `bb animation new`.
 - HTML export from the editor, `bb animation export`, or `animation_export_html`.

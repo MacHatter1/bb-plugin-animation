@@ -24,7 +24,9 @@ import type {
 import { DEFAULT_STATE, DEFAULT_TONE } from "../core/types";
 import { sanitizeHtml } from "../core/sanitizeHtml";
 import { resolveHtmlMarkup, type HtmlAssets } from "../core/htmlParts";
-import { routeEdge } from "../core/route";
+import { actorCircle, routeEdge } from "../core/route";
+import { ICONS } from "../core/icons";
+import { lookFor, type Look } from "../core/looks";
 
 /** Escape text for XML content and attribute values. */
 export function escapeXml(value: string): string {
@@ -45,8 +47,46 @@ function partAttrs(id: string, part: Part, extraClass: string): string {
   );
 }
 
-function renderNode(id: string, part: NodePart): string {
-  const title = escapeXml((part.label ?? id).toUpperCase());
+/** An icon scaled into a square of `size`, with its stroke kept at one weight. */
+function renderIcon(name: string, x: number, y: number, size: number): string {
+  const scale = size / 24;
+  return (
+    `<g class="scene-node-icon" transform="translate(${x.toFixed(1)} ${y.toFixed(
+      1
+    )}) scale(${scale.toFixed(3)})" style="stroke-width:${(1.7 / scale).toFixed(
+      2
+    )}">${ICONS[name]}</g>`
+  );
+}
+
+/**
+ * A person or a device: a circle holding its icon, with the name underneath.
+ * It takes the same box and the same states as a card, so edges, focus and
+ * steps treat it exactly like one.
+ */
+function renderActor(id: string, part: NodePart, look: Look): string {
+  const label = part.label ?? id;
+  const name = escapeXml(look.caps ? label.toUpperCase() : label);
+  // The same circle the router attaches edges to.
+  const { cx, cy, r } = actorCircle(part);
+  const size = r * 1.1;
+  return (
+    `<g ${partAttrs(
+      id,
+      part,
+      "scene-part scene-node scene-actor"
+    )} transform="translate(${part.x} ${part.y})">` +
+    `<circle class="scene-node-body" cx="${cx}" cy="${cy}" r="${r}"/>` +
+    renderIcon(part.icon ?? "user", cx - size / 2, cy - size / 2, size) +
+    `<text class="scene-node-title" x="${cx}" y="${part.h - 6}">${name}</text>` +
+    `</g>`
+  );
+}
+
+function renderNode(id: string, part: NodePart, look: Look): string {
+  if (part.variant === "actor") return renderActor(id, part, look);
+  const label = part.label ?? id;
+  const title = escapeXml(look.caps ? label.toUpperCase() : label);
   const headerH = 34;
   const rows = part.rows ?? [];
 
@@ -58,7 +98,10 @@ function renderNode(id: string, part: NodePart): string {
     `<rect class="scene-node-header" width="${part.w}" height="${headerH}" rx="4"/>`
   );
   pieces.push(`<path class="scene-node-rule" d="M0 ${headerH} H${part.w}"/>`);
-  pieces.push(`<text class="scene-node-title" x="16" y="23">${title}</text>`);
+  if (part.icon) pieces.push(renderIcon(part.icon, 13, 9, 16));
+  pieces.push(
+    `<text class="scene-node-title" x="${part.icon ? 37 : 16}" y="23">${title}</text>`
+  );
   pieces.push(
     `<circle class="scene-node-dot" cx="${part.w - 16}" cy="17" r="3.6"/>`
   );
@@ -263,7 +306,7 @@ export function renderPart(
   if (!part) return "";
   switch (part.type) {
     case "node":
-      return renderNode(id, part);
+      return renderNode(id, part, lookFor(doc.stage.look));
     case "edge":
       return renderEdge(id, part, doc);
     case "label":
@@ -287,10 +330,34 @@ export function sceneAriaLabel(doc: AnimDocument): string {
   return `Animated diagram with ${partCount} parts and ${doc.steps.length} steps.${narration}`;
 }
 
+/**
+ * The pattern behind the diagram, for looks that have one. It is drawn three
+ * stages wide and high, so a camera move never runs off the edge of it.
+ */
+function renderBackdrop(doc: AnimDocument, look: Look): string {
+  if (look.pattern === "none") return "";
+  const { width, height } = doc.stage;
+  const tile =
+    look.pattern === "grid"
+      ? `<pattern id="scene-pattern" width="40" height="40" patternUnits="userSpaceOnUse">` +
+        `<path class="scene-pattern-line" d="M40 0H0V40"/></pattern>`
+      : `<pattern id="scene-pattern" width="26" height="26" patternUnits="userSpaceOnUse">` +
+        `<circle class="scene-pattern-dot" cx="2" cy="2" r="1.2"/></pattern>`;
+  return (
+    `<defs>${tile}</defs>` +
+    `<rect class="scene-backdrop" x="${-width}" y="${-height}" width="${
+      width * 3
+    }" height="${height * 3}" fill="url(#scene-pattern)"/>`
+  );
+}
+
 export function renderScene(doc: AnimDocument, assets?: HtmlAssets): string {
-  const body = drawOrder(doc)
-    .map((id) => renderPart(id, doc, assets))
-    .join("");
+  const look = lookFor(doc.stage.look);
+  const body =
+    renderBackdrop(doc, look) +
+    drawOrder(doc)
+      .map((id) => renderPart(id, doc, assets))
+      .join("");
   return (
     `<svg class="scene-stage" xmlns="http://www.w3.org/2000/svg" ` +
     `viewBox="0 0 ${doc.stage.width} ${doc.stage.height}" ` +

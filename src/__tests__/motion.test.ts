@@ -37,13 +37,13 @@ function docOf(value: unknown): AnimDocument {
 }
 
 function node(x: number, y = 190, extra: Record<string, unknown> = {}) {
-  return { type: "node", x, y, w: 220, h: 144, ...extra };
+  return { type: "node", x, y, w: 220, h: 144, icon: "box", ...extra };
 }
 
 /** Four boxes in a row on the recipe's grid. */
 function row(steps: unknown[], parts: Record<string, unknown> = {}) {
   return docOf({
-    stage: { width: 1200, height: 560, fps: 25 },
+    stage: { width: 1200, height: 560, fps: 25, look: "slate" },
     parts: {
       a: node(60),
       b: node(350),
@@ -571,6 +571,67 @@ describe("edge routing", () => {
     expect(resolveAtStep(doc, 0).get("e")?.state).toBe("idle");
   });
 
+  it("keeps both labels centred on a request and its reply", () => {
+    // Two lanes sit one above the other. Their labels do not touch, so neither
+    // may be pushed along its line towards one of the boxes.
+    const doc = row([STEP], {
+      answer: { type: "edge", from: "b", to: "a", text: "93.184.216.34" },
+      ask: { type: "edge", from: "a", to: "b", text: "example.com?" },
+    });
+    for (const id of ["answer", "ask"]) {
+      const r = routeEdge(doc, id)!;
+      expect(r.label).toEqual(r.at(0.5));
+      expect(r.label.x).toBe(315);
+    }
+  });
+
+  it("attaches an actor's edges to its circle, not to the box around it", () => {
+    const doc = docOf({
+      stage: { width: 1200, height: 700, fps: 25, look: "slate" },
+      parts: {
+        user: node(60, 270, { variant: "actor", icon: "user" }),
+        api: node(490, 270),
+        below: node(60, 490),
+        call: { type: "edge", from: "user", to: "api" },
+        down: { type: "edge", from: "user", to: "below" },
+      },
+      steps: [STEP],
+    });
+    // The circle is 88 across, centred in the 220 by 144 box: x 126 to 214.
+    const call = routeEdge(doc, "call")!;
+    // Level with the card beside it: both ends at the row's centre line.
+    expect(call.d).toBe("M214.0 342.0 L490.0 342.0");
+    expect(call.gap).toBe(276);
+    // A line leaving in another direction still starts on the circle itself.
+    const down = routeEdge(doc, "down")!;
+    const [x, y] = down.d.slice(1).split(" L")[0].split(" ").map(Number);
+    expect(Math.hypot(x - 170, y - 342)).toBeCloseTo(44, 0);
+    expect(renderPart("user", doc)).toContain('cx="110" cy="72" r="44"');
+  });
+
+  it("slides a label along its line when another label has the middle", () => {
+    // The two diagonals of a square cross at the centre, where both labels would sit.
+    const doc = docOf({
+      stage: { width: 1200, height: 700, fps: 25, look: "slate" },
+      parts: {
+        tl: node(250, 140),
+        tr: node(730, 140),
+        bl: node(250, 400),
+        br: node(730, 400),
+        down: { type: "edge", from: "tl", to: "br", text: "new base" },
+        up: { type: "edge", from: "tr", to: "bl", text: "parent 2" },
+      },
+      steps: [STEP],
+    });
+    const down = routeEdge(doc, "down")!;
+    const up = routeEdge(doc, "up")!;
+    const apart = Math.hypot(down.label.x - up.label.x, down.label.y - up.label.y);
+    expect(apart).toBeGreaterThan(46);
+    // The first keeps the middle; the lines themselves do not move.
+    expect(down.label).toEqual(down.at(0.5));
+    expect(up.d).toBe(routeEdge({ ...doc, parts: { ...doc.parts, down: { ...doc.parts.down, text: undefined } } } as AnimDocument, "up")!.d);
+  });
+
   it("returns nothing for an edge with a missing end", () => {
     const doc = row([STEP], { e: { type: "edge", from: "a", to: "ghost" } });
     expect(routeEdge(doc, "e")).toBeNull();
@@ -670,6 +731,36 @@ describe("design notes: story", () => {
       { e: { type: "edge", from: "a", to: "b" }, extra: node(60, 380) }
     );
     expect(note(doc, "focus")).toContain('add "focus": ["a", "b"] to step "s2"');
+  });
+
+  it("counts a change inside an html part as something on screen", () => {
+    // A UI-driven scene animates the regions inside one html part. The step is
+    // not dead air, even though no top-level part changes on it.
+    const doc = row(
+      [
+        { id: "s1", duration: 2500, caption, set: { b: { state: "hidden" } } },
+        {
+          id: "s2",
+          duration: 2500,
+          caption,
+          focus: "panel",
+          set: { "panel/row": { tone: "warning" } },
+        },
+        { id: "s3", duration: 2500, caption, set: { b: { state: "idle" } } },
+      ],
+      {
+        panel: {
+          type: "html",
+          x: 60,
+          y: 380,
+          w: 400,
+          h: 200,
+          html: "<p>x</p>",
+          subParts: { row: {} },
+        },
+      }
+    );
+    expect(rules(doc)).not.toContain("step-static");
   });
 
   it("flags rows that read as a status, since text never changes", () => {
@@ -799,6 +890,15 @@ describe("what the plugin ships follows its own rules", () => {
     name.endsWith(".scene.json")
   );
 
+  it.each(samples)("samples/%s has every edge label in the middle of its line", (name) => {
+    const { doc } = parseDocument(readFileSync(join(root, "samples", name), "utf8"));
+    for (const [id, part] of Object.entries(doc.parts)) {
+      if (part.type !== "edge" || !part.text) continue;
+      const r = routeEdge(doc, id)!;
+      expect(r.label, `${name} ${id}`).toEqual(r.at(0.5));
+    }
+  });
+
   it.each(samples)("samples/%s has no design notes", (name) => {
     const { doc, problems } = parseDocument(
       readFileSync(join(root, "samples", name), "utf8")
@@ -875,7 +975,7 @@ describe("what the plugin ships follows its own rules", () => {
     });
     parts.rail = { type: "label", x: 60, y: 620, text: "01 STAGE", caps: true };
     const doc = docOf({
-      stage: { width: 1200, height: 700, fps: 25 },
+      stage: { width: 1200, height: 700, fps: 25, look: "slate" },
       parts,
       steps: [
         { ...STEP, id: "s1" },

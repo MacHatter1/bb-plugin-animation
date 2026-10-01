@@ -6,6 +6,37 @@ All notable changes to Animation are documented here. The format follows
 
 ## Unreleased
 
+### Added
+
+- Looks: `stage.look` sets a scene's palette, type, corners, backdrop and
+  arrival style by name. There are ten: `slate`, `blueprint`, `paper`, `neon`,
+  `terminal`, `daylight`, `chalk`, `ink`, `sunset` and `mint`. `stage.theme`
+  still overrides single colours on top of a look.
+- Icons: a node takes an `icon` from a built-in set of 24.
+- Actors: `"variant": "actor"` draws a node as a circle holding its icon, for
+  the people and devices in a story.
+- Layouts for a hub and a ring in the skill, alongside the row and two rows.
+- Design notes for style: a scene with no look is assigned one from its title,
+  boxes with no icons get one suggested each, people are suggested as actors,
+  and a row of boxes whose edges form a hub or a loop gets the positions for
+  that shape.
+- `samples/lookup.scene.json`, a hub-layout scene in the `paper` look.
+
+### Changed
+
+- The exported page's caption uses the look's heading type.
+- Many edges between one pair of boxes close up so they stay on the boxes'
+  facing sides, and edge labels that would sit on top of each other slide
+  apart along their lines.
+- A vertical edge may carry text wider than its gap, since the text runs
+  sideways.
+
+### Fixed
+
+- Every scene looked the same: dark slate, mono type, a row of cards.
+- An actor's edges attach to its circle, which sits at the centre of its box,
+  so they meet the drawing and run level with the cards beside it.
+
 ## 0.2.0 - 2026-09-30
 
 ### Added

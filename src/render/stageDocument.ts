@@ -17,6 +17,7 @@ import {
 import { renderScene } from "./scene";
 import type { HtmlAssets } from "../core/htmlParts";
 import { buildStageCss, resolveStageTheme, type ThemeTokens } from "./stageCss";
+import { lookFor } from "../core/looks";
 
 /**
  * `tokens` is the fallback, not the answer: a document that stamps
@@ -29,12 +30,19 @@ export function buildStageDocument(
   tokens: ThemeTokens,
   assets?: HtmlAssets
 ): string {
-  const theme = resolveStageTheme(doc.stage.theme, tokens);
+  // A document that names a look takes that look's palette. One that does not
+  // keeps the host's tokens, as it always has.
+  const look = lookFor(doc.stage.look);
+  const theme = resolveStageTheme(
+    doc.stage.theme,
+    doc.stage.look ? look.tokens : tokens
+  );
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>${buildStageCss(
     theme.tokens,
     doc.stage.background,
-    theme.custom
+    theme.custom,
+    look
   )}</style></head>
 <body>${renderScene(doc, assets)}</body></html>`;
 }

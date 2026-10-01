@@ -35,6 +35,7 @@ import {
 import { renderScene } from "./scene";
 import type { HtmlAssets } from "../core/htmlParts";
 import { buildStageCss, resolveStageTheme, type ThemeTokens } from "./stageCss";
+import { lookFor } from "../core/looks";
 
 /** One step's worth of attribute writes: part id -> [state, tone]. */
 type StateDelta = Record<string, [string, string]>;
@@ -272,6 +273,8 @@ body { cursor: pointer; display: flex; flex-direction: column; }
   max-width: 920px;
   color: var(--scene-text);
   font: 500 18px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* The narration speaks in the look's voice: serif on paper, mono in a terminal. */
+  font-family: var(--scene-title-font);
   text-align: center;
   text-wrap: balance;
 }
@@ -331,7 +334,11 @@ export function buildStandaloneDocument(
   const title = options.title ?? "Animation";
   // `tokens` is the fallback; a document that stamps `stage.theme` wins, which
   // is what keeps this file and the in-editor preview the same picture.
-  const theme = resolveStageTheme(doc.stage.theme, tokens);
+  const look = lookFor(doc.stage.look);
+  const theme = resolveStageTheme(
+    doc.stage.theme,
+    doc.stage.look ? look.tokens : tokens
+  );
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -343,7 +350,8 @@ export function buildStandaloneDocument(
 <style>${buildStageCss(
     theme.tokens,
     doc.stage.background,
-    theme.custom
+    theme.custom,
+    look
   )}${PAGE_CSS}</style>
 </head>
 <body>

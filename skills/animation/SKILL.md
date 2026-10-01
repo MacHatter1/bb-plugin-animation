@@ -25,31 +25,53 @@ BB surfaces:
 
 ## The recipe
 
-Follow these eight steps in order. They produce a good animation without any design judgement, and the validator in step 8 catches what you cannot see.
+Follow these nine steps in order. They produce a good animation without any design judgement, and the validator in step 9 catches what you cannot see.
 
 1. **Write the story as 6 to 10 captions.** One sentence each, 10 words or fewer (12 is the limit). Read together, they explain the thing to someone who has never seen it. Captions are shown under the stage as narration, so they are the script. **If the user asked for a length, write one caption per 2.5 seconds**: 12 captions for 30 seconds.
-2. **Pick 3 to 6 boxes.** One `node` per actor in the story. More than 6 means the story is two animations. Give each box one or two rows of **fixed facts**: a name, a limit, a setting. Never a status such as `pending`, `verified` or `done`: text cannot change between steps, so a status is wrong for most of the run. Show change with states, not with text.
-3. **Place them on the grid** in the table below. Do not invent coordinates.
-4. **Hide what arrives later.** Every part the first caption does not need gets `"state": "hidden"`. Reveal it with `"state": "idle"` or `"active"` in the step whose caption introduces it. Hidden parts rise into place when shown. Edges need no hiding: an edge appears in the step that first lights it, and stays afterwards as a trace of the conversation.
-5. **Write one step per caption.** Light the one or two parts the caption is about, and **set an edge `"flowing"` whenever something passes between two boxes**: the moving packets are what make it an animation. When an edge flows into a box, set that box `"active"` in the same step, so the arrival shows. Any two boxes can be joined, not only neighbours. Switch off what the previous step lit: set its edges back to `"idle"`. **Every step must change something the viewer can see**; a step that only changes the caption is dead air, so merge it into its neighbour. Take `duration` from the table below.
-6. **Add `focus`** to steps that are about one or two boxes: `"focus": ["queue", "worker"]`. The stage zooms to them. If the step lights an edge, name the boxes at both ends of it. Leave `focus` off the first step, any step that reveals parts, and the last step.
-7. **End calm.** In the last step every edge is `"idle"`, the box that holds the result stays `"active"`, and there is no `focus`.
-8. **Validate, fix, repeat.** Run `animation_validate` (or `bb animation validate <path>`). If the user asked for a length, pass it as `targetSeconds` (`--seconds` on the CLI). Apply every design note exactly as written, then validate again. **Never delete an edge or a box to clear a note**: that deletes part of the story. Stop when it says `design notes: none`. Then put the `::scene` line it gives you in your reply.
+2. **Leave `"look"` out of your first draft.** The look is the scene's whole character: palette, type, corners, backdrop. The validator assigns one to each scene in step 9, so that different scenes look different. Set exactly the one it names. Only choose a look yourself when the user asks for one by name, and never write colours.
+3. **Pick 3 to 6 boxes.** One `node` per thing in the story. More than 6 means the story is two animations.
+   - Give every box an `"icon"` from the list below.
+   - A person or a device is an **actor**: add `"variant": "actor"`, which draws a circle with the icon and the name under it. An actor has no `rows` and no `subtitle`.
+   - Give each other box one or two rows of **fixed facts**: a name, a limit, a setting. Never a status such as `pending`, `verified` or `done`: text cannot change between steps, so a status is wrong for most of the run. Show change with states, not with text.
+4. **Choose the layout from the shape of the story**, using the table below, and copy its coordinates. A chain is a row. One thing in the middle talking to several is a hub. A loop is a ring. Do not put everything in a row by habit.
+5. **Hide what arrives later.** Every box the first caption does not need gets `"state": "hidden"`. Reveal it with `"state": "idle"` or `"active"` in the step whose caption introduces it. Hidden parts rise into place when shown. Edges need no hiding: an edge appears in the step that first lights it, and stays afterwards as a trace of the conversation.
+6. **Write one step per caption.** Light the one or two parts the caption is about, and **set an edge `"flowing"` whenever something passes between two boxes**: the moving packets are what make it an animation. When an edge flows into a box, set that box `"active"` in the same step, so the arrival shows. Any two boxes can be joined, not only neighbours. Switch off what the previous step lit: set its edges back to `"idle"`. **Every step must change something the viewer can see**; a step that only changes the caption is dead air, so merge it into its neighbour. Take `duration` from the table below.
+7. **Add `focus`** to steps that are about one or two boxes: `"focus": ["queue", "worker"]`. The stage zooms to them. If the step lights an edge, name the boxes at both ends of it. Leave `focus` off the first step, any step that reveals parts, and the last step.
+8. **End calm.** In the last step every edge is `"idle"`, the box that holds the result stays `"active"`, and there is no `focus`.
+9. **Validate, fix, repeat.** Run `animation_validate` (or `bb animation validate <path>`). If the user asked for a length, pass it as `targetSeconds` (`--seconds` on the CLI). Apply every design note exactly as written, then validate again. **Never delete an edge or a box to clear a note**: that deletes part of the story. Stop when it says `design notes: none`. Then put the `::scene` line it gives you in your reply.
 
-**Layout grid** for a `1200` by `560` stage, one row of boxes:
+**Looks.** One is assigned to your scene by the validator; set it as `"stage": { ..., "look": "paper" }`.
 
-| What | Where |
+| Look | What it looks like |
 | --- | --- |
-| Title `label` with `"size": "title"` | `x: 60, y: 56` |
-| Tagline `label` with `caps: true` | `x: 60, y: 84` |
-| 2 nodes | `y: 190`, `w: 220`, at `x: 250`, `730`. Edge `text` up to 31 characters |
-| 3 nodes | `y: 190`, `w: 220`, at `x: 60`, `490`, `920`. Edge `text` up to 24 characters |
-| 4 nodes | `y: 190`, `w: 195`, at `x: 60`, `355`, `650`, `945`. Edge `text` up to 10 characters |
-| Node height | `144` for a subtitle and 2 rows. In general `32 × rows + 80` with a subtitle, `32 × rows + 64` without |
-| Progress rail, 5 caps labels | `y: 470`, at `x: 60`, `290`, `520`, `750`, `980` |
-| Edges | Between any two boxes. Give every edge a short `text` saying what is sent. Neighbours get a straight line, so the text must fit the gap (limits above). An edge that skips a box arcs over the row, and its `text` can be longer |
+| `blueprint` | Engineering drawing: deep blue, grid, mono type |
+| `paper` | Warm cream, serif heading, rounded cards |
+| `neon` | Black with vivid glowing colour |
+| `terminal` | Green on black, square, parts arrive in blocky steps |
+| `daylight` | Clean and light, like product documentation |
+| `chalk` | Green chalkboard with chalk-white outlines |
+| `ink` | Black line drawing on white, like a wireframe |
+| `sunset` | Warm dusk colours, plum and coral, soft and rounded |
+| `mint` | Fresh light green with teal, very rounded |
+| `slate` | Neutral dark cards, the plain default |
 
-For 5 to 8 boxes use a `1200` by `700` stage with two rows: nodes at `y: 150` and `y: 370`, rail at `y: 620`. Each row uses the `x` positions above for the number of boxes in it.
+**Icons.** `user`, `browser`, `phone`, `server`, `database`, `queue`, `cloud`, `globe`, `lock`, `key`, `shield`, `code`, `branch`, `gear`, `chip`, `box`, `file`, `mail`, `clock`, `chart`, `check`, `bolt`, `rocket`, `search`.
+
+**Layouts.** Every box is `w: 220, h: 144` unless the table says otherwise. The title is a `label` with `"size": "title"` at `x: 60, y: 56`, and the tagline a `label` with `caps: true` at `x: 60, y: 84`.
+
+| Story shape | Layout | Stage | Box positions |
+| --- | --- | --- | --- |
+| Two sides exchanging messages | pair | `1200` by `560` | `x: 250` and `x: 730`, `y: 190`. Edge `text` up to 31 characters |
+| A chain of three | row | `1200` by `560` | `x: 60`, `490`, `920`, `y: 190`. Edge `text` up to 24 characters |
+| A chain of four | row | `1200` by `560` | `w: 195` at `x: 60`, `355`, `650`, `945`, `y: 190`. Edge `text` up to 10 characters |
+| One thing in the middle talking to three or four others | hub | `1200` by `700` | Centre `x: 490, y: 270`. Around it: `x: 60, y: 270`; `x: 920, y: 270`; `x: 490, y: 490`; `x: 490, y: 50` |
+| A loop of four that returns to the start | ring | `1200` by `700` | `x: 150, y: 140`; `x: 830, y: 140`; `x: 830, y: 430`; `x: 150, y: 430`, joined in that order |
+| A loop of three | ring | `1200` by `700` | `x: 150, y: 140`; `x: 830, y: 140`; `x: 490, y: 430` |
+| Two groups, or five to eight boxes | two rows | `1200` by `700` | Rows at `y: 150` and `y: 370`, each using the row positions above |
+
+- **Node height** is `144` for a subtitle and 2 rows. In general `32 × rows + 80` with a subtitle, `32 × rows + 64` without.
+- **Progress rail**: 5 caps labels at `x: 60`, `290`, `520`, `750`, `980`. Put them at `y: 470` on a 560-high stage and `y: 660` on a 700-high one.
+- **Edges** join any two boxes. Give every edge a short `text` saying what is sent. Between neighbours the line is straight, so the text must fit the gap (limits above). An edge that skips a box arcs round it, and its `text` can be longer.
 
 **Step duration** from the caption's word count (`400 + 260 × words`, rounded up):
 
@@ -57,7 +79,7 @@ For 5 to 8 boxes use a `1200` by `700` stage with two rows: nodes at `y: 150` an
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `duration` | 1500 | 1700 | 2000 | 2300 | 2500 | 2800 | 3000 |
 
-The worked example at the end of this file follows this recipe exactly. Copy it and change the story.
+The worked example at the end of this file follows this recipe. Copy its structure, then change the story, the look and the layout to suit yours.
 
 ## The mental model
 
@@ -85,6 +107,7 @@ Times are **integer milliseconds**. Never frame indices, never floats.
 | Field | Notes |
 | --- | --- |
 | `width`, `height` | Clamped to 16..8192. The stage scales to fit the pane, so these set the aspect ratio and the coordinate system, not the pixel size. |
+| `look` | The scene's visual character, by name (see the looks table in the recipe). Sets the palette, type, corners, backdrop and how parts arrive. Use the one the validator assigns; do not write colours. |
 | `fps` | Only affects frame snapping and the readout. Use 25 unless you have a reason. Whole-millisecond frame rates: 10, 20, 25, 50. |
 | `background` | Optional override. Omit it and the stage uses `stage.theme.bg`, or the fixed dark fallback palette when there is no theme -- usually what you want. |
 
@@ -102,8 +125,10 @@ Part ids are the keys. All four types share `label`, `tone`, and `state` (their 
   "rows": [ { "key": "f7a9", "value": "commit  182 B" }, { "key": "e816" } ] }
 ```
 
-- `label` is **uppercased automatically**. Write `"Merge gate"`, it renders `MERGE GATE`. Falls back to the id.
+- `label` is **uppercased automatically** in some looks: write `"Merge gate"`, and it may render `MERGE GATE`. Write it in normal capitalisation. Falls back to the id.
 - `subtitle` is a small mono line under the header. Keep it short and caps-ish; it is where model names, worktrees, and units go.
+- `icon` is the name of a built-in icon, drawn beside the title. The names are listed in the recipe.
+- `"variant": "actor"` draws the node as a circle holding its icon with the name underneath, for the people and devices in a story. It takes the same `x`, `y`, `w`, `h`, states and edges as a card, but shows no `subtitle` or `rows`. Edges attach to the circle, and it sits at the centre of its box, so an actor placed on the grid lines up with the cards beside it.
 - `rows` render as boxed key/value pairs. `value` is optional. Key is left-aligned, value right-aligned.
 - **A row that would spill past the bottom is silently dropped.** Size the node to its rows (see Geometry).
 
@@ -118,6 +143,7 @@ Part ids are the keys. All four types share `label`, `tone`, and `state` (their 
 - An edge is hidden while either of its ends is `hidden`, and comes back in its own state when both are shown. You do not hide edges yourself.
 - An edge that a step lights is not drawn until that step, so the lines appear as the story uses them. To show an edge from the start, give the part `"state": "idle"`. An edge that no step ever lights is a fixed relationship and is always drawn.
 - `packets` is how many squares travel the line while it is flowing (default 3). Set `0` for an edge that means a *relationship* rather than traffic. One trip takes 1.6s.
+- **You do not position edge text.** It is centred on its line, and moves along the line only when another edge's text would cover it. If a label looks misplaced, the boxes are too close or too many edges share one spot; do not try to fix it by nudging coordinates.
 - `text` draws a caption at the midpoint **on an opaque background plate** roughly `max(40, len × 7.6 + 16)` px wide. It will punch a hole through anything behind it. Only put `text` on an edge whose gap is wider than the plate.
 
 **`label`** -- free-standing text.
@@ -299,9 +325,9 @@ Leave the gap wide enough for what the edge carries: ~40px for a bare edge with 
 The editor rewrites the file on save with a fixed key order. **Hand-write it in canonical order or your first save will reformat the whole file and bury the real edit in the diff.**
 
 - Root: `version`, `stage`, `parts`, `steps`
-- `stage`: `width`, `height`, `fps`, `background`
+- `stage`: `width`, `height`, `fps`, `look`, `background`
 - `parts`: **sorted alphabetically by id**. Within a part: `type`, `label`, `tone`, `state`, then
-  - node: `x`, `y`, `w`, `h`, `subtitle`, `rows`
+  - node: `x`, `y`, `w`, `h`, `icon`, `variant`, `subtitle`, `rows`
   - edge: `from`, `to`, `text`, `packets`
   - label: `x`, `y`, `text`, `align`, `caps`, `size`
   - shape: `x`, `y`, `w`, `h`, `shape`, `text`
@@ -418,6 +444,7 @@ The validator reports every row marked ✓ below as a design note with the fix w
 | The whole file reformats on first save | It was not written in canonical order. |
 | A line crosses a card ✓ | Rare: edges arc round boxes on their own. It only happens when there is no clear space above or below the row. |
 | A box says something untrue ✓ | A row holds a status such as `verified`. Rows never change, so use fixed facts. |
+| It looks like every other scene ✓ | No `look`, no icons, everything a card in a row. Set a look, add icons, make people actors, and use the layout that fits the story's shape. |
 | It ends on nothing ✓ | The last step switched every box off. Keep the result lit. |
 | Traffic arrives and nothing happens ✓ | An edge flows into a box that stays grey. Set the box `"active"` in the same step. |
 | The picture stands still ✓ | A step changes nothing, or only changes things outside the zoomed frame. Light something in frame or merge the step. |
@@ -433,7 +460,8 @@ A complete, canonical file that follows the recipe: a job queue that retries a f
   "stage": {
     "width": 1200,
     "height": 560,
-    "fps": 25
+    "fps": 25,
+    "look": "blueprint"
   },
   "parts": {
     "claim": {
@@ -457,6 +485,7 @@ A complete, canonical file that follows the recipe: a job queue that retries a f
       "y": 190,
       "w": 195,
       "h": 144,
+      "icon": "server",
       "subtitle": "ORDERS API",
       "rows": [
         {
@@ -476,6 +505,7 @@ A complete, canonical file that follows the recipe: a job queue that retries a f
       "y": 190,
       "w": 195,
       "h": 144,
+      "icon": "queue",
       "subtitle": "FIFO / AT LEAST ONCE",
       "rows": [
         {
@@ -531,6 +561,7 @@ A complete, canonical file that follows the recipe: a job queue that retries a f
       "y": 190,
       "w": 195,
       "h": 144,
+      "icon": "database",
       "subtitle": "OBJECT STORAGE",
       "rows": [
         {
@@ -565,6 +596,7 @@ A complete, canonical file that follows the recipe: a job queue that retries a f
       "y": 190,
       "w": 195,
       "h": 144,
+      "icon": "gear",
       "subtitle": "CONSUMER",
       "rows": [
         {
@@ -793,6 +825,7 @@ A complete, canonical file that follows the recipe: a job queue that retries a f
 
 What it does, step by step:
 
+- **Has a look and icons.** It uses the `blueprint` look, and each box carries an icon for what it is.
 - **Starts with two boxes.** `worker` and `store` begin `hidden`, and rise in at the `worker` step, a beat apart from left to right. Their edges appear with them.
 - **Narrates every step** in 9 words or fewer, with each `duration` taken from the word count.
 - **Zooms to the beat.** `enqueue`, `claim`, `fail`, `retry` and `again` each `focus` on the boxes involved. `job`, `worker` and `done` show the whole stage, so the viewer sees where they are before and after.

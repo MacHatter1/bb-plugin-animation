@@ -14,38 +14,17 @@
 
 import { PACKET_TRAVEL_S } from "./scene";
 import { CSS_FETCHING_FUNCTION } from "../core/sanitizeHtml";
+import {
+  lookFor,
+  SLATE_TOKENS,
+  type Look,
+  type ThemeTokens,
+} from "../core/looks";
 
-export interface ThemeTokens {
-  bg: string;
-  surface: string;
-  surfaceRaised: string;
-  border: string;
-  borderStrong: string;
-  text: string;
-  textMuted: string;
-  textFaint: string;
-  accent: string;
-  success: string;
-  warning: string;
-  error: string;
-  purple: string;
-}
+export type { ThemeTokens };
 
-export const FALLBACK_TOKENS: ThemeTokens = {
-  bg: "#16181c",
-  surface: "#1e2126",
-  surfaceRaised: "#22262c",
-  border: "#4a4a4a",
-  borderStrong: "#5c5c5c",
-  text: "#ffffff",
-  textMuted: "#b3b3b3",
-  textFaint: "#808080",
-  accent: "#60a5fa",
-  success: "#4ade80",
-  warning: "#fbbf24",
-  error: "#ef4444",
-  purple: "#a78bfa",
-};
+/** The palette used when a document names no look. */
+export const FALLBACK_TOKENS: ThemeTokens = SLATE_TOKENS;
 
 /** Duration of the state-to-state transition, in milliseconds. */
 export const TRANSITION_MS = 320;
@@ -114,14 +93,16 @@ export function resolveStageTheme(
 export function buildStageCss(
   tokens: ThemeTokens,
   background?: string,
-  custom?: Record<string, string>
+  custom?: Record<string, string>,
+  look: Look = lookFor(undefined)
 ): string {
   const safeTokens = Object.fromEntries(
     Object.entries(tokens).map(([key, value]) => [
       key,
-      safeCssColor(value, FALLBACK_TOKENS[key as keyof ThemeTokens]),
+      safeCssColor(value, look.tokens[key as keyof ThemeTokens]),
     ])
   ) as unknown as ThemeTokens;
+  const v = look.vars;
   const safeBackground = safeCssColor(background, safeTokens.bg);
 
   // A project's own vocabulary, emitted after the stage's own tokens so a
@@ -157,8 +138,17 @@ export function buildStageCss(
   --scene-duration: ${TRANSITION_MS}ms;
   --scene-ease: cubic-bezier(0.4, 0, 0.2, 1);
   --scene-enter: ${ENTER_MS}ms;
-  /* Decelerating: a part arrives quickly and settles, rather than easing in. */
-  --scene-enter-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  /* How a part arrives. Most looks decelerate: quick in, then settle. */
+  --scene-enter-ease: ${v.enterEase};
+  --scene-enter-from: ${v.enterFrom};
+
+  /* The look: everything about the scene's character that is not a colour. */
+  --scene-radius: ${v.radius}px;
+  --scene-font: ${v.font};
+  --scene-title-font: ${v.titleFont};
+  --scene-edge-dash: ${v.edgeDash};
+  --scene-packet-radius: ${v.packetRadius}px;
+  --scene-glow: ${v.glow}%;
 
   --anim-bg: var(--scene-bg);
   --anim-surface: var(--scene-surface);
@@ -260,6 +250,7 @@ html, body {
   fill: var(--scene-surface);
   stroke: var(--scene-border);
   stroke-width: 1.3px;
+  rx: var(--scene-radius);
   /* A zero shadow rather than none, so the active glow has something to
      interpolate from. */
   filter: drop-shadow(0 0 0 transparent);
@@ -268,11 +259,22 @@ html, body {
               stroke-width var(--scene-duration) var(--scene-ease),
               filter var(--scene-enter) var(--scene-ease);
 }
-.scene-node-header { fill: var(--scene-surface-raised); }
+.scene-node-header { fill: var(--scene-surface-raised); rx: var(--scene-radius); }
+/* A built-in icon beside the title, or filling an actor's circle. */
+.scene-node-icon {
+  fill: none;
+  stroke: var(--scene-text-muted);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke var(--scene-duration) var(--scene-ease);
+}
+.scene-node[data-state="active"] .scene-node-icon { stroke: var(--scene-tone); }
+.scene-node[data-state="offline"] .scene-node-icon { stroke: var(--scene-text-faint); }
+.scene-actor .scene-node-title { text-anchor: middle; }
 .scene-node-rule { stroke: var(--scene-border); stroke-width: 1.2px; }
 .scene-node-title {
   fill: var(--scene-text);
-  font-family: var(--scene-mono);
+  font-family: var(--scene-font);
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.8px;
@@ -281,7 +283,7 @@ html, body {
 .scene-node-subtitle,
 .scene-row-key,
 .scene-row-value {
-  font-family: var(--scene-mono);
+  font-family: var(--scene-font);
   font-size: 11px;
   transition: fill var(--scene-duration) var(--scene-ease);
 }
@@ -292,6 +294,7 @@ html, body {
   fill: var(--scene-surface-raised);
   stroke: var(--scene-border);
   stroke-width: 1.1px;
+  rx: calc(var(--scene-radius) * 0.6);
   transition: fill var(--scene-duration) var(--scene-ease),
               stroke var(--scene-duration) var(--scene-ease);
 }
@@ -309,7 +312,7 @@ html, body {
   stroke-width: 1.8px;
 }
 .scene-node[data-state="active"] .scene-node-body {
-  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--scene-tone) 42%, transparent));
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--scene-tone) var(--scene-glow), transparent));
 }
 .scene-node[data-state="active"] .scene-node-dot { opacity: 1; }
 /* The lit node is the one being read, so its rows come up a level. */
@@ -340,7 +343,7 @@ html, body {
   fill: none;
   stroke: var(--scene-border);
   stroke-width: 1.4px;
-  stroke-dasharray: 5 4;
+  stroke-dasharray: var(--scene-edge-dash);
 }
 .scene-edge-flow {
   fill: none;
@@ -358,6 +361,7 @@ html, body {
 
 /* ---- edge packets ------------------------------------------------------- */
 .scene-edge-packet {
+  rx: var(--scene-packet-radius);
   fill: var(--scene-tone);
   stroke: var(--scene-bg);
   stroke-width: 1px;
@@ -425,7 +429,7 @@ html, body {
 }
 .scene-edge-label text {
   fill: var(--scene-text-faint);
-  font-family: var(--scene-mono);
+  font-family: var(--scene-font);
   font-size: 12.5px;
   transition: fill var(--scene-duration) var(--scene-ease);
 }
@@ -450,7 +454,7 @@ html, body {
 /* ---- labels and shapes -------------------------------------------------- */
 .scene-label {
   fill: var(--scene-text-muted);
-  font-family: var(--scene-mono);
+  font-family: var(--scene-font);
   font-size: 12px;
   transition: fill var(--scene-duration) var(--scene-ease),
               opacity var(--scene-enter) var(--scene-enter-ease),
@@ -463,7 +467,7 @@ html, body {
 /* The scene's heading. Proportional, like html parts, because it is prose. */
 .scene-label-title {
   fill: var(--scene-text);
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--scene-title-font);
   font-size: 24px;
   font-weight: 650;
   letter-spacing: -0.2px;
@@ -475,13 +479,14 @@ html, body {
   fill: var(--scene-tone-fill);
   stroke: var(--scene-tone);
   stroke-width: 1.3px;
+  rx: calc(var(--scene-radius) * 0.6);
   transition: fill var(--scene-duration) var(--scene-ease),
               stroke var(--scene-duration) var(--scene-ease),
               opacity var(--scene-duration) var(--scene-ease);
 }
 .scene-shape-text {
   fill: var(--scene-text);
-  font-family: var(--scene-mono);
+  font-family: var(--scene-font);
   font-size: 11px;
 }
 .scene-shape[data-state="active"] .scene-shape-body {
@@ -542,7 +547,7 @@ html, body {
  */
 .scene-node[data-state="hidden"],
 .scene-shape[data-state="hidden"],
-.scene-html[data-state="hidden"] { translate: 0 14px; }
+.scene-html[data-state="hidden"] { translate: var(--scene-enter-from); }
 .scene-label[data-state="hidden"] { translate: 0 7px; }
 
 /*
@@ -553,6 +558,13 @@ html, body {
 .scene-part, .scene-part * {
   transition-delay: var(--scene-delay, 0ms) !important;
 }
+
+/* ---- backdrop ----------------------------------------------------------- */
+/* What sits behind the diagram in looks that have a pattern. It is inside the
+   camera group, so it zooms with the scene like paper under a drawing. */
+.scene-backdrop { pointer-events: none; }
+.scene-pattern-line { fill: none; stroke: var(--scene-border); stroke-width: 1px; opacity: 0.2; }
+.scene-pattern-dot { fill: var(--scene-border-strong); opacity: 0.35; }
 
 /* ---- camera ------------------------------------------------------------- */
 /*
@@ -634,5 +646,5 @@ html, body {
     animation: none !important;
   }
 }
-`;
+${look.css}`;
 }

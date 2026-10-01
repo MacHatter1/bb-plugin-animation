@@ -18,7 +18,7 @@ Play it in BB, embed it in chat, or export one HTML page to share.
 
 <br>
 
-<img src="screenshots/animation/retry-fail.jpg" alt="An exported scene zoomed to a worker and a store: the write between them fails in red, with the caption 'The write fails, so the job is never acknowledged' under the stage" width="900">
+<img src="screenshots/animation/retry-fail.jpg" alt="An exported scene in the blueprint look, zoomed to a worker and a store: the write between them fails in red, with the caption 'The write fails, so the job is never acknowledged' under the stage" width="900">
 
 </div>
 
@@ -58,21 +58,22 @@ boundary to retime it. <kbd>Space</kbd> plays, <kbd>⌘S</kbd> saves, and
 </td>
 <td width="50%" valign="top">
 
-### 🎥 Motion built in
+### 🎥 Motion and narration
 
-Parts rise in when a step reveals them, a step's changes sweep left to right,
-and lit boxes glow. Add `focus` to a step and the stage zooms to the boxes it
-is about. None of it is scripted.
+Parts rise in when revealed, changes sweep left to right, and `focus` zooms
+the stage to the boxes a step is about. Each step's caption shows under the
+stage as narration. None of it is scripted.
 
 </td>
 </tr>
 <tr>
 <td valign="top">
 
-### 🗣️ Narrated
+### 🎨 Ten looks
 
-Every step's caption shows under the stage in the editor, the chat embed and
-the export, with a progress line along the bottom of the exported page.
+One word sets a scene's whole character: `blueprint`, `paper`, `neon`,
+`terminal`, `chalk`, `ink` and more. Boxes carry icons, people are drawn as
+actors, and layouts follow the story's shape: a row, a hub, a ring.
 
 </td>
 <td valign="top">
@@ -110,8 +111,8 @@ a worked example to copy.
 <div align="center">
 <table>
 <tr>
-<td align="center"><img src="screenshots/animation/queue-drain-run.png" alt="Queue drain scene with both workers claiming an item at once" width="440"><br><sub><b>Both workers claim</b></sub></td>
-<td align="center"><img src="screenshots/animation/cache-aside.png" alt="Cache-aside scene: a cache miss reads through to the primary database" width="440"><br><sub><b>Cache-aside read path</b></sub></td>
+<td align="center"><img src="screenshots/animation/lookup-hub.jpg" alt="A DNS lookup in the paper look: a resolver in the middle of a hub asks the root, TLD and authoritative servers, with a browser drawn as an actor" width="440"><br><sub><b>Paper look, hub layout</b></sub></td>
+<td align="center"><img src="screenshots/animation/cache-aside-daylight.jpg" alt="A cache-aside read in the daylight look: a caller, a cache and a primary database in a row on a light background" width="440"><br><sub><b>Daylight look, row layout</b></sub></td>
 </tr>
 </table>
 </div>
@@ -176,6 +177,9 @@ flowchart LR
 - **Edges route themselves.** Neighbours get a straight line. An edge that
   skips a box arcs round it, and a request and its reply run in separate
   lanes.
+- **A look is a name, not a palette.** `stage.look` picks the colours, type,
+  corners, backdrop and arrival style together. The validator assigns one to
+  each scene from its title, so scenes made the same way do not look the same.
 - **One parser everywhere.** The editor, CLI, agent tools and export all use
   the same parser. It repairs near-misses with a warning. Errors block saving
   and export.
@@ -257,7 +261,7 @@ src/core/        parser, serialiser, timeline, camera, design notes and HTML san
 src/render/      scene SVG, stage CSS and the standalone export
 src/components/  editor, stage frame and step strip
 components/ui/   vendored BB UI primitives
-samples/         two scenes to copy: a cache-aside read and a job queue with retry
+samples/         three scenes to copy, each in a different look and layout
 skills/          the bundled agent skill
 docs/            logo
 screenshots/     README images

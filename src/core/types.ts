@@ -45,6 +45,11 @@ export interface StageSpec {
   width: number;
   height: number;
   fps: number;
+  /**
+   * The scene's visual character, by name: palette, type, corners, backdrop
+   * and how parts arrive. See `looks.ts`. Absent means the default look.
+   */
+  look?: string;
   /** Optional background override; defaults to the stage surface token. */
   background?: string;
   /**
@@ -70,6 +75,13 @@ export interface NodePart extends PartBase {
   y: number;
   w: number;
   h: number;
+  /** Name of a built-in icon, drawn beside the title. See `icons.ts`. */
+  icon?: string;
+  /**
+   * `"actor"` draws the node as a circle holding its icon, with the name
+   * underneath, instead of a card. For the people and devices in a story.
+   */
+  variant?: 'actor';
   /** Small mono line under the title. */
   subtitle?: string;
   /** Rows rendered inside the node body, e.g. key/value pairs. */

@@ -20,7 +20,14 @@ import {
   type PreservedEntries,
 } from "./parse";
 
-const STAGE_ORDER = ["width", "height", "fps", "background", "theme"] as const;
+const STAGE_ORDER = [
+  "width",
+  "height",
+  "fps",
+  "look",
+  "background",
+  "theme",
+] as const;
 
 /**
  * A sub-part entry's key order. Sub-part *ids* keep the order the compiler
@@ -39,6 +46,8 @@ const PART_ORDER: Record<Part["type"], readonly string[]> = {
     "y",
     "w",
     "h",
+    "icon",
+    "variant",
     "subtitle",
     "rows",
   ],

@@ -3,7 +3,8 @@
   "stage": {
     "width": 1200,
     "height": 560,
-    "fps": 25
+    "fps": 25,
+    "look": "blueprint"
   },
   "parts": {
     "claim": {
@@ -27,6 +28,7 @@
       "y": 190,
       "w": 195,
       "h": 144,
+      "icon": "server",
       "subtitle": "ORDERS API",
       "rows": [
         {
@@ -46,6 +48,7 @@
       "y": 190,
       "w": 195,
       "h": 144,
+      "icon": "queue",
       "subtitle": "FIFO / AT LEAST ONCE",
       "rows": [
         {
@@ -101,6 +104,7 @@
       "y": 190,
       "w": 195,
       "h": 144,
+      "icon": "database",
       "subtitle": "OBJECT STORAGE",
       "rows": [
         {
@@ -135,6 +139,7 @@
       "y": 190,
       "w": 195,
       "h": 144,
+      "icon": "gear",
       "subtitle": "CONSUMER",
       "rows": [
         {

@@ -1,0 +1,410 @@
+{
+  "version": 1,
+  "stage": {
+    "width": 1200,
+    "height": 700,
+    "fps": 25,
+    "look": "paper"
+  },
+  "parts": {
+    "answer": {
+      "type": "edge",
+      "from": "resolver",
+      "to": "browser",
+      "text": "93.184.216.34",
+      "packets": 3
+    },
+    "ask": {
+      "type": "edge",
+      "from": "browser",
+      "to": "resolver",
+      "text": "example.com?",
+      "packets": 3
+    },
+    "auth": {
+      "type": "node",
+      "label": "Authoritative",
+      "state": "hidden",
+      "x": 490,
+      "y": 490,
+      "w": 220,
+      "h": 144,
+      "icon": "database",
+      "subtitle": "EXAMPLE.COM",
+      "rows": [
+        {
+          "key": "record",
+          "value": "A"
+        },
+        {
+          "key": "address",
+          "value": "93.184.216.34"
+        }
+      ]
+    },
+    "browser": {
+      "type": "node",
+      "label": "Browser",
+      "x": 60,
+      "y": 270,
+      "w": 220,
+      "h": 144,
+      "icon": "browser",
+      "variant": "actor"
+    },
+    "railAnswer": {
+      "type": "label",
+      "x": 750,
+      "y": 660,
+      "text": "04 ANSWER",
+      "caps": true
+    },
+    "railAsk": {
+      "type": "label",
+      "x": 60,
+      "y": 660,
+      "text": "01 ASK",
+      "caps": true
+    },
+    "railConnect": {
+      "type": "label",
+      "x": 980,
+      "y": 660,
+      "text": "05 CONNECT",
+      "caps": true
+    },
+    "railRoot": {
+      "type": "label",
+      "x": 290,
+      "y": 660,
+      "text": "02 ROOT",
+      "caps": true
+    },
+    "railTld": {
+      "type": "label",
+      "x": 520,
+      "y": 660,
+      "text": "03 TLD",
+      "caps": true
+    },
+    "resolver": {
+      "type": "node",
+      "label": "Resolver",
+      "x": 490,
+      "y": 270,
+      "w": 220,
+      "h": 144,
+      "icon": "globe",
+      "subtitle": "RECURSIVE",
+      "rows": [
+        {
+          "key": "address",
+          "value": "1.1.1.1"
+        },
+        {
+          "key": "cache",
+          "value": "1 hour"
+        }
+      ]
+    },
+    "root": {
+      "type": "node",
+      "label": "Root server",
+      "state": "hidden",
+      "x": 490,
+      "y": 50,
+      "w": 220,
+      "h": 144,
+      "icon": "server",
+      "subtitle": "ROOT ZONE",
+      "rows": [
+        {
+          "key": "zone",
+          "value": "."
+        },
+        {
+          "key": "knows",
+          "value": ".com servers"
+        }
+      ]
+    },
+    "tagline": {
+      "type": "label",
+      "x": 60,
+      "y": 84,
+      "text": "ONE NAME, FOUR QUESTIONS",
+      "caps": true
+    },
+    "title": {
+      "type": "label",
+      "x": 60,
+      "y": 56,
+      "text": "How a DNS lookup works",
+      "size": "title"
+    },
+    "tld": {
+      "type": "node",
+      "label": "TLD server",
+      "state": "hidden",
+      "x": 920,
+      "y": 270,
+      "w": 220,
+      "h": 144,
+      "icon": "server",
+      "subtitle": ".COM REGISTRY",
+      "rows": [
+        {
+          "key": "zone",
+          "value": ".com"
+        },
+        {
+          "key": "knows",
+          "value": "example.com"
+        }
+      ]
+    },
+    "toAuth": {
+      "type": "edge",
+      "from": "resolver",
+      "to": "auth",
+      "text": "address?",
+      "packets": 3
+    },
+    "toRoot": {
+      "type": "edge",
+      "from": "resolver",
+      "to": "root",
+      "text": "who has .com?",
+      "packets": 3
+    },
+    "toTld": {
+      "type": "edge",
+      "from": "resolver",
+      "to": "tld",
+      "text": "who has example?",
+      "packets": 3
+    }
+  },
+  "steps": [
+    {
+      "id": "type",
+      "duration": 2000,
+      "caption": "You type example.com into the browser.",
+      "set": {
+        "browser": {
+          "state": "active",
+          "tone": "accent"
+        },
+        "railAsk": {
+          "state": "active",
+          "tone": "accent"
+        }
+      }
+    },
+    {
+      "id": "ask",
+      "duration": 2500,
+      "caption": "The browser asks a resolver for the address.",
+      "focus": [
+        "browser",
+        "resolver"
+      ],
+      "set": {
+        "ask": {
+          "state": "flowing",
+          "tone": "accent"
+        },
+        "resolver": {
+          "state": "active",
+          "tone": "accent"
+        }
+      }
+    },
+    {
+      "id": "root",
+      "duration": 2800,
+      "caption": "The resolver asks a root server who handles .com.",
+      "set": {
+        "ask": {
+          "state": "idle"
+        },
+        "browser": {
+          "state": "idle"
+        },
+        "railAsk": {
+          "state": "idle",
+          "tone": "neutral"
+        },
+        "railRoot": {
+          "state": "active",
+          "tone": "accent"
+        },
+        "root": {
+          "state": "active",
+          "tone": "accent"
+        },
+        "toRoot": {
+          "state": "flowing",
+          "tone": "accent"
+        }
+      }
+    },
+    {
+      "id": "referral",
+      "duration": 2300,
+      "caption": "Root points it to the .com servers.",
+      "focus": [
+        "resolver",
+        "root"
+      ],
+      "set": {
+        "root": {
+          "state": "idle"
+        },
+        "toRoot": {
+          "state": "returning",
+          "tone": "success"
+        }
+      }
+    },
+    {
+      "id": "tld",
+      "duration": 2500,
+      "caption": "It asks a .com server who handles example.com.",
+      "set": {
+        "railRoot": {
+          "state": "idle",
+          "tone": "neutral"
+        },
+        "railTld": {
+          "state": "active",
+          "tone": "accent"
+        },
+        "tld": {
+          "state": "active",
+          "tone": "accent"
+        },
+        "toRoot": {
+          "state": "idle"
+        },
+        "toTld": {
+          "state": "flowing",
+          "tone": "accent"
+        }
+      }
+    },
+    {
+      "id": "handoff",
+      "duration": 2000,
+      "caption": "That server names the authoritative server.",
+      "focus": [
+        "resolver",
+        "tld"
+      ],
+      "set": {
+        "tld": {
+          "state": "idle"
+        },
+        "toTld": {
+          "state": "returning",
+          "tone": "success"
+        }
+      }
+    },
+    {
+      "id": "query",
+      "duration": 2300,
+      "caption": "The resolver asks it for the address.",
+      "set": {
+        "auth": {
+          "state": "active",
+          "tone": "accent"
+        },
+        "toAuth": {
+          "state": "flowing",
+          "tone": "accent"
+        },
+        "toTld": {
+          "state": "idle"
+        }
+      }
+    },
+    {
+      "id": "found",
+      "duration": 2000,
+      "caption": "It answers with the IP address.",
+      "focus": [
+        "resolver",
+        "auth"
+      ],
+      "set": {
+        "auth": {
+          "state": "active",
+          "tone": "success"
+        },
+        "railAnswer": {
+          "state": "active",
+          "tone": "success"
+        },
+        "railTld": {
+          "state": "idle",
+          "tone": "neutral"
+        },
+        "toAuth": {
+          "state": "returning",
+          "tone": "success"
+        }
+      }
+    },
+    {
+      "id": "reply",
+      "duration": 2800,
+      "caption": "The resolver caches it and replies to the browser.",
+      "focus": [
+        "browser",
+        "resolver"
+      ],
+      "set": {
+        "answer": {
+          "state": "flowing",
+          "tone": "success"
+        },
+        "auth": {
+          "state": "idle"
+        },
+        "browser": {
+          "state": "active",
+          "tone": "success"
+        },
+        "resolver": {
+          "state": "active",
+          "tone": "success"
+        },
+        "toAuth": {
+          "state": "idle"
+        }
+      }
+    },
+    {
+      "id": "connect",
+      "duration": 1700,
+      "caption": "Now the browser can connect.",
+      "set": {
+        "answer": {
+          "state": "idle"
+        },
+        "railAnswer": {
+          "state": "idle",
+          "tone": "neutral"
+        },
+        "railConnect": {
+          "state": "active",
+          "tone": "success"
+        },
+        "resolver": {
+          "state": "idle"
+        }
+      }
+    }
+  ]
+}

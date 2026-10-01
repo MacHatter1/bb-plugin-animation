@@ -16,8 +16,10 @@
 
 import { cameraAtStep, partBox, type Box } from "./camera";
 import { routeEdge } from "./route";
+import { suggestIcon } from "./icons";
+import { DEFAULT_LOOK, LOOKS, LOOK_IDS } from "./looks";
 import { LIT_EDGE_STATES, resolveAtStep } from "./timeline";
-import type { AnimDocument, NodePart, Part } from "./types";
+import type { AnimDocument, NodePart, Part, ResolvedPartState } from "./types";
 
 export interface Advice {
   /** Stable name for the rule, so a note can be recognised and tested. */
@@ -232,6 +234,17 @@ function geometryNotes(doc: AnimDocument): Advice[] {
     }
 
     if (part.type !== "node") continue;
+    if (part.variant === "actor") {
+      const name = (part.label ?? id).length * TITLE_CHAR_W;
+      if (name > part.w + 40) {
+        notes.push({
+          rule: "text-fit",
+          path: `${path}.label`,
+          message: `Actor "${id}" has a name about ${Math.ceil(name)} wide under a ${part.w}-wide circle, so it runs into its neighbours. Shorten the label to ${Math.floor((part.w + 40) / TITLE_CHAR_W)} characters or fewer.`,
+        });
+      }
+      continue;
+    }
 
     const rows = part.rows ?? [];
     const statuses = rows.filter(
@@ -259,7 +272,8 @@ function geometryNotes(doc: AnimDocument): Advice[] {
       });
     }
 
-    const title = (part.label ?? id).length * TITLE_CHAR_W + 48;
+    const title =
+      (part.label ?? id).length * TITLE_CHAR_W + 48 + (part.icon ? 21 : 0);
     const subtitle = (part.subtitle?.length ?? 0) * SMALL_CHAR_W + 32;
     const widestRow = Math.max(
       0,
@@ -318,7 +332,11 @@ function geometryNotes(doc: AnimDocument): Advice[] {
 
     if (part.text && route.kind === "straight") {
       const plate = Math.max(40, part.text.length * EDGE_TEXT_CHAR_W + 16);
-      if (plate > route.gap - 8) {
+      // The text runs horizontally whatever the edge's angle, so a vertical
+      // edge only has to clear the plate's height, not its width.
+      const slope = Math.abs(Math.cos((route.angle * Math.PI) / 180));
+      const along = plate * slope + 28 * (1 - slope);
+      if (along > route.gap - 8) {
         const fits = Math.max(0, Math.floor((route.gap - 24) / EDGE_TEXT_CHAR_W));
         const spread = spreadRow(doc, part.from);
         notes.push({
@@ -439,6 +457,27 @@ function suggestFocus(
   return ids.length >= 1 && ids.length <= 3 ? ids : [];
 }
 
+/**
+ * Ids whose state or tone differs between two resolved snapshots.
+ *
+ * The snapshots include the regions inside an html part, keyed `part/region`,
+ * and a step that only recolours a region still changes the picture. Reading
+ * the snapshots rather than the document's top-level part ids is what keeps a
+ * UI-driven scene from being reported as frozen.
+ */
+function changedIds(
+  before: Map<string, ResolvedPartState>,
+  after: Map<string, ResolvedPartState>
+): string[] {
+  const changed: string[] = [];
+  for (const [id, now] of after) {
+    const was = before.get(id);
+    if (was && was.state === now.state && was.tone === now.tone) continue;
+    changed.push(id);
+  }
+  return changed;
+}
+
 function storyNotes(doc: AnimDocument): Advice[] {
   const notes: Advice[] = [];
   const ids = Object.keys(doc.parts);
@@ -498,11 +537,7 @@ function storyNotes(doc: AnimDocument): Advice[] {
       w: doc.stage.width / camera.scale,
       h: doc.stage.height / camera.scale,
     };
-    const changed = ids.filter((id) => {
-      const was = resolved[index - 1].get(id);
-      const now = resolved[index].get(id);
-      return was && now && (was.state !== now.state || was.tone !== now.tone);
-    });
+    const changed = changedIds(resolved[index - 1], resolved[index]);
     const inFrame = changed.filter((id) => {
       const box = partBox(doc, id);
       return box !== null && intersects(view, box);
@@ -695,8 +730,190 @@ export function lintDocument(
     ...stateNotes(doc),
     ...pacingNotes(doc),
     ...storyNotes(doc),
+    ...layoutNotes(doc),
+    ...styleNotes(doc),
     ...lengthNotes(doc, options.targetSeconds),
   ];
+}
+
+/**
+ * The look assigned to a scene: one of the non-default looks, chosen by a hash
+ * of the scene's own title.
+ *
+ * Assigned rather than matched to the subject on purpose. Almost everything
+ * worth animating is technical, so any rule that reads the subject sends
+ * nearly every scene to the same look, and authors left to choose do the same.
+ * A hash spreads scenes evenly across the looks and gives the same scene the
+ * same look every time it is validated.
+ */
+export function suggestLook(doc: AnimDocument): string {
+  const labels = Object.entries(doc.parts)
+    .filter(([, part]) => part.type === "label")
+    .sort(([a], [b]) => (a < b ? -1 : 1));
+  const title = labels.find(([, part]) => part.type === "label" && part.size === "title");
+  const seed =
+    (title && title[1].type === "label" ? title[1].text : "") ||
+    Object.keys(doc.parts).sort().join(" ");
+  const others = LOOK_IDS.filter((id) => id !== DEFAULT_LOOK);
+  let hash = 2166136261;
+  for (const char of seed.toLowerCase()) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return others[hash % others.length];
+}
+
+const LAYOUT_BOX = { w: 220, h: 144 };
+const LAYOUT_STAGE_H = 700;
+const LAYOUT_RAIL_Y = 660;
+
+/** Where boxes go when the story is one thing in the middle talking to the rest. */
+const HUB_CENTRE = { x: 490, y: 270 };
+const HUB_SPOKES = [
+  { x: 60, y: 270 },
+  { x: 920, y: 270 },
+  { x: 490, y: 490 },
+  { x: 490, y: 50 },
+];
+/** Where boxes go when the story is a loop, for three boxes and for four. */
+const CYCLES: Record<number, Array<{ x: number; y: number }>> = {
+  3: [
+    { x: 150, y: 140 },
+    { x: 830, y: 140 },
+    { x: 490, y: 430 },
+  ],
+  4: [
+    { x: 150, y: 140 },
+    { x: 830, y: 140 },
+    { x: 830, y: 430 },
+    { x: 150, y: 430 },
+  ],
+};
+
+/**
+ * Is a row of boxes hiding a different shape?
+ *
+ * The recipe's row suits a chain. When every edge touches one box the story is
+ * a hub, and when the edges close a ring it is a loop, and either drawn as a
+ * row is a tangle of arcs. The note gives the positions for the shape the
+ * edges already describe.
+ */
+function layoutNotes(doc: AnimDocument): Advice[] {
+  const nodes = Object.entries(doc.parts).filter(
+    (entry): entry is [string, NodePart] => entry[1].type === "node"
+  );
+  if (nodes.length < 3 || nodes.length > 5) return [];
+  // Only a plain single row is rearranged; anything else was laid out on purpose.
+  if (new Set(nodes.map(([, part]) => part.y)).size !== 1) return [];
+
+  const ids = nodes.map(([id]) => id);
+  const links = new Map<string, Set<string>>(ids.map((id) => [id, new Set()]));
+  for (const part of Object.values(doc.parts)) {
+    if (part.type !== "edge" || part.from === part.to) continue;
+    if (!links.has(part.from) || !links.has(part.to)) continue;
+    links.get(part.from)?.add(part.to);
+    links.get(part.to)?.add(part.from);
+  }
+  const degree = (id: string) => links.get(id)?.size ?? 0;
+  const pairs = ids.reduce((sum, id) => sum + degree(id), 0) / 2;
+  const byX = [...nodes].sort((a, b) => a[1].x - b[1].x).map(([id]) => id);
+
+  const place = (moves: Array<[string, { x: number; y: number }]>) =>
+    moves
+      .map(([id, at]) => `"${id}" to "x": ${at.x}, "y": ${at.y}`)
+      .join("; ");
+  const rest = `Give every box "w": ${LAYOUT_BOX.w} and "h": ${LAYOUT_BOX.h}, set the stage "height" to ${LAYOUT_STAGE_H}, and move the labels under the boxes to "y": ${LAYOUT_RAIL_Y}.`;
+
+  const centre = ids.find((id) => degree(id) === ids.length - 1);
+  if (centre && ids.length >= 4 && pairs === ids.length - 1) {
+    const spokes = byX.filter((id) => id !== centre);
+    return [
+      {
+        rule: "layout",
+        path: "parts",
+        message: `Every edge goes to or from "${centre}", so this is a hub, but the boxes are in a row. Put "${centre}" in the middle: move ${place([[centre, HUB_CENTRE], ...spokes.map((id, index): [string, { x: number; y: number }] => [id, HUB_SPOKES[index]])])}. ${rest}`,
+      },
+    ];
+  }
+
+  const ring = CYCLES[ids.length];
+  if (ring && pairs === ids.length && ids.every((id) => degree(id) === 2)) {
+    // Walk the ring from the leftmost box so neighbours end up next to each other.
+    const order = [byX[0]];
+    while (order.length < ids.length) {
+      const last = order[order.length - 1];
+      const next = [...(links.get(last) ?? [])].find((id) => !order.includes(id));
+      if (!next) return [];
+      order.push(next);
+    }
+    return [
+      {
+        rule: "layout",
+        path: "parts",
+        message: `The edges form a loop through all ${ids.length} boxes, but the boxes are in a row, so the edge that closes the loop has to arc back over everything. Lay them out as a ring: move ${place(order.map((id, index): [string, { x: number; y: number }] => [id, ring[index]]))}. ${rest}`,
+      },
+    ];
+  }
+  return [];
+}
+
+/**
+ * Notes about character rather than correctness. A scene with no look, no
+ * icons and nothing but cards is not wrong, but it is indistinguishable from
+ * every other scene made the same way.
+ */
+function styleNotes(doc: AnimDocument): Advice[] {
+  const notes: Advice[] = [];
+  const nodes = Object.entries(doc.parts).filter(
+    (entry): entry is [string, NodePart] => entry[1].type === "node"
+  );
+  // A two-step starter or a single box is a sketch, not a finished scene.
+  if (doc.steps.length < 3 || nodes.length < 2) return notes;
+
+  if (doc.stage.look === undefined) {
+    const pick = suggestLook(doc);
+    notes.push({
+      rule: "look",
+      path: "stage.look",
+      message: `No look is set, so this scene has the same plain style as every other unstyled scene. Add "look": "${pick}" to "stage" (${LOOKS[pick].feel}). It is assigned from the scene's title so that different scenes look different; use another only if the user asked for one by name. The looks are: ${LOOK_IDS.join(", ")}.`,
+    });
+  }
+
+  if (nodes.every(([, part]) => !part.icon)) {
+    const picks = nodes.map(
+      ([id, part]) => `"icon": "${suggestIcon(id, part.label) ?? "box"}" to "${id}"`
+    );
+    notes.push({
+      rule: "icons",
+      path: "parts",
+      message: `No box has an icon, so they can only be told apart by reading them. Add ${picks.join(", ")}.`,
+    });
+  }
+
+  if (nodes.every(([, part]) => part.variant !== "actor")) {
+    const people = nodes.filter(([id, part]) => {
+      const icon = part.icon ?? suggestIcon(id, part.label);
+      return icon === "user" || icon === "phone";
+    });
+    if (people.length > 0) {
+      notes.push({
+        rule: "actor",
+        path: `parts.${people[0][0]}`,
+        message: `Every box is a card, including the ${people.length === 1 ? "person" : "people"} in the story. Draw ${quote(people.map(([id]) => id))} as ${people.length === 1 ? "an actor" : "actors"}: add "variant": "actor" and remove ${people.length === 1 ? "its" : "their"} "rows" and "subtitle", which an actor does not show.`,
+      });
+    }
+  }
+
+  for (const [id, part] of nodes) {
+    if (part.variant !== "actor" || !(part.rows?.length || part.subtitle)) continue;
+    notes.push({
+      rule: "actor-rows",
+      path: `parts.${id}`,
+      message: `"${id}" is an actor, which shows only its icon and name, so its ${part.rows?.length ? '"rows"' : '"subtitle"'} ${part.rows?.length && part.subtitle ? 'and "subtitle" are' : "is"} never drawn. Remove ${part.rows?.length && part.subtitle ? "them" : "it"}, or drop "variant" to make it a card again.`,
+    });
+  }
+
+  return notes;
 }
 
 /** Is the scene about as long as was asked for? */
